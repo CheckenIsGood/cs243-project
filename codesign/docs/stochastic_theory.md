@@ -1,6 +1,6 @@
 # Stochastic theory: agent serving with random tool lags, bounded KV and batching
 
-Companion to `docs/stochastic_plan.md` (items R0–R8). Code: `src/deadline_agent/stochastic_theory.py`.
+Companion to `docs/stochastic_plan.md` (items R0–R8). Code: `src/codesign/stochastic_theory.py`.
 Machine checks: `tests/test_stochastic_theory.py`, cited below as **[T: name]** (name without the `test_` prefix).
 All checks use exact rational arithmetic (`fractions.Fraction`). Z3 is used for LPs and for algebra.
 Random instances use fixed seeds.

@@ -1,11 +1,11 @@
 # Independent verification of `docs/stochastic_theory.md` (commit e17bd7f)
 
-Scope: the version of `docs/stochastic_theory.md`, `src/deadline_agent/stochastic_theory.py` and
+Scope: the version of `docs/stochastic_theory.md`, `src/codesign/stochastic_theory.py` and
 `tests/test_stochastic_theory.py` at commit e17bd7f. Line numbers refer to `git show e17bd7f:project/docs/stochastic_theory.md`.
 
 How this was checked:
 - I audited every proof line by line.
-- I wrote my own code in `src/deadline_agent/stochastic_verify.py`, with its own instance types, simulators, exact DPs, bounds and LP. Nothing from the author's module is used to compute OPT, ALG or any bound. The only exception is cross-checks run outside the test file.
+- I wrote my own code in `src/codesign/stochastic_verify.py`, with its own instance types, simulators, exact DPs, bounds and LP. Nothing from the author's module is used to compute OPT, ALG or any bound. The only exception is cross-checks run outside the test file.
 - `tests/test_stochastic_verify.py` has 31 tests and all pass (`.venv/bin/python -m pytest -q tests/test_stochastic_verify.py`, about 55 s). The author's 27 tests also still pass.
 - The algebra is checked with Z3 5.3.3. sympy and scipy are not installed, so every LP is solved either with Z3 or by enumerating vertices.
 

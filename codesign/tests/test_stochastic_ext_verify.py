@@ -1,6 +1,6 @@
 """Independent verification tests for docs/stochastic_theory_ext.md (see docs/stochastic_theory_ext_verification.md).
 
-All instance generators, simulators, DPs and bounds come from deadline_agent.stochastic_ext_verify (written from
+All instance generators, simulators, DPs and bounds come from codesign.stochastic_ext_verify (written from
 scratch; it imports nothing from the author's modules). Only test_mutations_* import the AUTHOR's tests, to check
 that those tests are not vacuous. Exact Fractions; fixed seeds."""
 
@@ -14,7 +14,7 @@ from fractions import Fraction as Fr
 
 import z3
 
-from deadline_agent.stochastic_ext_verify import (
+from codesign.stochastic_ext_verify import (
     Cfg, DRN, DRT, MN, MT, RN, RT, Node, Task, beta_cp_h, calib_DR, calib_propK, calib_thmH, cumulative_lambda,
     d_realizations, det_opt_single_int, dtask_indep, DTask, emin, expected_alg_machines, expected_clair_ub,
     expected_total_work, gitt1, gittins_brute, gittins_dinkelbach, grid_opt_machines, lb_cp_machine, lcv2, law,
@@ -257,7 +257,7 @@ def test_thmH_lemma_H2_pathwise_and_s_process_mutation():
                 assert c <= b
                 chk += 1
             # mutation: interference charged on the s-process (no recompute)
-            from deadline_agent.stochastic_ext_verify import hyb_cp
+            from codesign.stochastic_ext_verify import hyb_cp
             Vs = v_matrix(S, [quanta(s_, Xs[t], G) for t, s_ in enumerate(S)])
             viol_s += any(c > T.r + hyb_cp(T, Xs[t], Ds[t], cfg, True) + sum(Vs[k][t] for k in range(len(ts)))
                           for t, (T, c) in enumerate(zip(ts, C)))
@@ -419,7 +419,7 @@ def test_thmA_tight_lower_bound_two_is_known_schulz_skutella():
 def _author_tests():
     sys.path.insert(0, "tests")
     import test_stochastic_theory_ext as T
-    import deadline_agent.stochastic_theory_ext as X
+    import codesign.stochastic_theory_ext as X
     return T, X
 
 
@@ -454,7 +454,7 @@ def test_mutations_author_lemmaP1_test_is_weak():
     """The author's random-law test of Lemma P1 still PASSES with the FALSE constant 0.76/(1+Delta) (false by the
     58/77 witness), so it does not certify the constant; only the proof (verified above) does."""
     T, X = _author_tests()
-    from deadline_agent.stochastic_theory import cv2
+    from codesign.stochastic_theory import cv2
 
     def false_p1(d1, d2):
         A, B = X.normalize(d1), X.normalize(d2)

@@ -6,7 +6,7 @@
 - **Method:**
   - a line-by-line audit of every hypothesis, inequality and constant;
   - primary sources checked where they could be accessed;
-  - my own exact code: `src/deadline_agent/stochastic_ext_verify.py`, which imports nothing from the author's
+  - my own exact code: `src/codesign/stochastic_ext_verify.py`, which imports nothing from the author's
     modules;
   - 23 tests: `tests/test_stochastic_ext_verify.py` (all pass, about 23 s).
 

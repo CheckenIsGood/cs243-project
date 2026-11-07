@@ -13,7 +13,7 @@ from fractions import Fraction as F
 import pytest
 import z3
 
-from deadline_agent.stochastic_theory import (
+from codesign.stochastic_theory import (
     HCfg, HNode, HTask, KeepClass, MTask, chain_task, cv2, critical_path, det, disc_bound, dist, dmax,
     expected_cost, h_bound, h_constants, h_Lmax, h_lower_bounds, h_order, h_realizations, h_sizes, hold_only_lower,
     index_vs_pmtn_ratio, keep_dual, keep_lp_z3, lag_trap, lb2_task_lp_z3, lb2_task_msu, lb_cp, lb_smith_det,
@@ -289,7 +289,7 @@ def test_thmD_hypotheses_are_necessary():
     L = h_Lmax(ts)
     pos = {k: i for i, k in enumerate(o)}
     Zk = [z - sum(alpha * (n.l_plus + L) for n in T.nodes) for z, T in zip(Z, ts)]
-    from deadline_agent.stochastic_theory import h_cp
+    from codesign.stochastic_theory import h_cp
     no_kappa = h_cp(J, lag[0], cfg, "alg") + sum(Zk[k] for k in range(len(ts)) if pos[k] <= pos[0])
     assert st["kicks"] == 5 and no_kappa < st["C"][0] <= h_bound(ts, lag, cfg)[0]
     # (3) the memory margin M' = M + L_max is needed: normalizing the area by M' instead of M' - L_max fails

@@ -21,7 +21,7 @@ from fractions import Fraction as F
 from functools import lru_cache
 from typing import Sequence
 
-from deadline_agent.stochastic_theory import (
+from codesign.stochastic_theory import (
     MTask, HCfg, HNode, HTask, Dist, det, dist, mean, opt_pmtn_dp, smith, h_sizes, h_Lmax, h_constants,
 )
 
@@ -545,7 +545,7 @@ def normalize(d: Dist) -> Dist:
 def emin_lower_bound_holds(d1: Dist, d2: Dist) -> bool:
     """Lemma P1 for mean-1 laws with CV^2 <= Delta: E min(X,Y) >= 16/(27(1+Delta)) and
     E min(X,Y) >= 1 - sqrt(Delta/2) (checked exactly by squaring)."""
-    from deadline_agent.stochastic_theory import cv2
+    from codesign.stochastic_theory import cv2
     X, Y = normalize(d1), normalize(d2)
     D = max(cv2(X), cv2(Y))
     e = emin(X, Y)
@@ -561,7 +561,7 @@ def smith_expected(tasks: Sequence[MTask]) -> F:
 
 def smith_clairvoyant(tasks: Sequence[MTask]) -> F:
     """E[Smith(W(omega))]: the clairvoyant single-machine optimum (speed 1, no releases), task works independent."""
-    from deadline_agent.stochastic_theory import realizations
+    from codesign.stochastic_theory import realizations
     tot = F(0)
     for prob, P, D in realizations(tasks):
         tot += prob * smith([T.w for T in tasks], [sum(P[t]) for t in range(len(tasks))])
@@ -571,7 +571,7 @@ def smith_clairvoyant(tasks: Sequence[MTask]) -> F:
 def pair_ratio_bound(tasks: Sequence[MTask]) -> F:
     """max over task pairs of min(a, b) / E min(a X, b Y) (a = w_k E W_j, b = w_j E W_k): the exact constant of the
     pairwise argument Smith(E W) <= max(1, this) * E Smith(W)."""
-    from deadline_agent.stochastic_theory import realizations
+    from codesign.stochastic_theory import realizations
     laws = []
     for T in tasks:
         acc: dict = {}

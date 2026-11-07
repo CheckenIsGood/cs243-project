@@ -8,11 +8,11 @@ import itertools
 import random
 from fractions import Fraction as F
 
-from deadline_agent.stochastic_theory import (
+from codesign.stochastic_theory import (
     HCfg, HNode, HTask, det, dist, expected_cost, h_bound, h_constants, h_lower_bounds, h_realizations, h_sizes,
     opt_pmtn_dp, sim_hybrid, smith, task_index_order,
 )
-from deadline_agent.stochastic_theory_ext import (
+from codesign.stochastic_theory_ext import (
     DONE, PNode, PTask, RNode, RTask, chain_cp, expected_gittins_machines, expected_work, gittins,
     gittins_single_value, hyb_cp, lambda_D, lb_cp_h, lb_cp_p, machine_ptask, p_realizations, quanta,
     r_realizations, realized_path, s_process, sim_gittins_hybrid, sim_gittins_machines, single_machine_opt,
@@ -318,10 +318,10 @@ def test_thmA_lower_bound_sqrt2():
 
 
 # ===================================================================== Theorem P (index policy vs clairvoyant)
-from deadline_agent.stochastic_theory import (  # noqa: E402
+from codesign.stochastic_theory import (  # noqa: E402
     cv2, h_cp, index_vs_pmtn_ratio, lb_cp, mean, opt_clair_1m, MTask, chain_task,
 )
-from deadline_agent.stochastic_theory_ext import (  # noqa: E402
+from codesign.stochastic_theory_ext import (  # noqa: E402
     CapNode, DRNode, DRTask, dr_expected_sizes, dr_order, dr_realizations, emin, emin_lower_bound_holds,
     normalize, pair_ratio_bound, smith_clairvoyant, smith_expected,
 )
@@ -372,7 +372,7 @@ def test_thmP_index_policy_vs_clairvoyant_m1():
         oc = opt_clair_1m(ts)
         assert alg <= lb_cp(ts) + se and se <= pr * sc and sc <= oc and lb_cp(ts) <= oc
         # pair constant obeys Lemma P1: pr <= (27/16)(1 + Delta_W)
-        from deadline_agent.stochastic_theory import realizations
+        from codesign.stochastic_theory import realizations
         laws = []
         for T in ts:
             acc = {}

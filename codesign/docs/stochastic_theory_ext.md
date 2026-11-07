@@ -7,7 +7,7 @@ and benchmarks are as in [base] §1:
 - OPT_clair: the clairvoyant optimum, with OPT_clair ≤ OPT_na.
 - Δ: a squared coefficient of variation.
 
-Code: `src/deadline_agent/stochastic_theory_ext.py`. Machine checks: `tests/test_stochastic_theory_ext.py`,
+Code: `src/codesign/stochastic_theory_ext.py`. Machine checks: `tests/test_stochastic_theory_ext.py`,
 cited as **[X: name]** (without the `test_` prefix). There are 20 tests, about 17 s in total. All arithmetic is
 exact (Fractions); Z3 is used for algebra.
 

@@ -13,7 +13,7 @@ from fractions import Fraction as Q
 
 import z3
 
-from deadline_agent.stochastic_verify import (
+from codesign.stochastic_verify import (
     E, Eng, Job, LBcp, Lmax, Node, Agent, agent_reals, discrete_ski_ratio, engine_lower_bounds, exp_cost,
     hold_only_value_lb, index_vs_probe, is_chain, joint, karlin_cost, keep_dual_scan, keep_lp_vertex, law, lb2,
     lb2_dual_certificate, lemmaA1_rhs, lemmaD1_rhs, msu_check_policy, msu_node_lp, opt_clair_exp, opt_na_pmtn_1m,
@@ -316,7 +316,7 @@ def test_thmD_corrected_bound_with_preload_aware_L1():
         lb0 = Q(0)
         for pr, lag in agent_reals(ts):
             for t, T in enumerate(ts):
-                from deadline_agent.stochastic_verify import cp_path
+                from codesign.stochastic_verify import cp_path
                 lb0 += pr * T.w * (T.r + cp_path(T, lag[t], lambda nd: (cfg.a + cfg.c) * nd.X))
         _, S = engine_lower_bounds(ts, cfg)
         bcp, b, th = thmD_constants(ts, cfg)
