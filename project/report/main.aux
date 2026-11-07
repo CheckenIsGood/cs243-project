@@ -1,0 +1,28 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{kim2024llmcompiler}
+\citation{abhyankar2024infercept}
+\citation{lin2024parrot}
+\citation{zheng2024sglang}
+\citation{kwon2023vllm}
+\newlabel{sec:problem}{{1}{1}{}{section.1}{}}
+\newlabel{sec:design}{{2}{1}{}{section.2}{}}
+\citation{qwen3}
+\citation{yang2018hotpotqa}
+\newlabel{sec:eval}{{3}{2}{}{section.3}{}}
+\newlabel{tab:serving}{{1}{2}{Serving view at $D=16$\,s (restricted context; mean over the same 10 questions per policy; missed runs cut at the deadline). GPU util.\ = fraction of the tool-wait window in which the model is busy}{table.1}{}}
+\bibdata{refs}
+\bibcite{abhyankar2024infercept}{{1}{2024}{{Abhyankar et~al.}}{{Abhyankar, He, Srivatsa, Zhang, and Zhang}}}
+\bibcite{kim2024llmcompiler}{{2}{2024}{{Kim et~al.}}{{Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and Gholami}}}
+\bibcite{kwon2023vllm}{{3}{2023}{{Kwon et~al.}}{{Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang, and Stoica}}}
+\bibcite{lin2024parrot}{{4}{2024}{{Lin et~al.}}{{Lin, Han, Zhang, Yang, Yang, Chen, and Qiu}}}
+\bibcite{qwen3}{{5}{2025}{{Qwen Team}}{{}}}
+\bibcite{yang2018hotpotqa}{{6}{2018}{{Yang et~al.}}{{Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and Manning}}}
+\bibcite{zheng2024sglang}{{7}{2024}{{Zheng et~al.}}{{Zheng, Yin, Xie, Sun, Huang, Yu, Cao, Kozyrakis, Stoica, Gonzalez, Barrett, and Sheng}}}
+\newlabel{fig:main}{{1}{3}{\textbf {Main result (restricted-context stress setting).} Deadline-qualified F1 (left) and miss rate (right) vs.\ deadline, 10 held-out HotpotQA questions, 150 runs on vLLM/A40. Dashed lines: miss rate predicted by the MDP from the calibration costs. RSS and the optimal MDP policy coincide in 29/30 question--deadline cells (points offset $\pm $0.12\,s for visibility). When on time, all policies give similar F1 (${\approx }0.77$): the gain is timeliness}{figure.1}{}}
+\newlabel{fig:preload}{{2}{3}{\textbf {KV preloading microbenchmark} (live server, prefix caching on, 30 requests). Left: latency of the final request after the last result arrives; preload requests (dashed) run while tools are still out. Right: fraction of the final prompt served from the prefix cache (server-reported \texttt {cached\_tokens})}{figure.2}{}}
+\newlabel{sec:plan}{{4}{3}{}{section.4}{}}
+\bibstyle{icml2025}
+\gdef \@abspage@last{4}

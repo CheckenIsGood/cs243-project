@@ -1,0 +1,19 @@
+[project]
+name = "deadline-agent"
+version = "0.1.0"
+description = "Deadline-aware result consumption for asynchronous LLM agents"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.27", "pyyaml>=6", "matplotlib>=3.8", "pyarrow>=15"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deadline_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

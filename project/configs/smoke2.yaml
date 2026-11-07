@@ -1,0 +1,30 @@
+# Re-measure summary sizes after the consume-schema fix (Gate 1). Calibration questions only.
+# Controller costs come from measurements, not guesses:
+#   results/calibration/costs.json  (48-sample latency profile; affine fit r2=0.9999, median rel err 0.4%)
+#   results/real/smoke-gate1/traces  (token sizes; server/estimate token ratio 0.96)
+# overhead_s: fit gave -0.042 s (statistically ~0); clamped to 0.
+# prefill_s_per_tok: fitted 1.803e-4 s per server token x 0.959 server/est ratio = per runtime-estimated token.
+# raw_tokens: median retrieved-result size (est tokens). consume/final base prompts and summary size: from traces.
+# result_token_cap 576 (~median result): equalizes result sizes so the count-based cost model holds; the first
+# calibration attempt (calib-gate1, cap 1200) showed 324-879-token results forcing a 3rd summary after the last
+# return on large questions (18/22 deadline misses). With the cap, 2 summaries always fit under 1600.
+# final_context_cap 1600: with these sizes the final prompt needs 2 summaries for a median question
+# (2048 needed only 1, while larger smoke questions needed 2; see STATUS.md, Gate 1 regime check).
+name: smoke2
+backend: vllm
+base_url: http://127.0.0.1:8000
+model: Qwen/Qwen3-8B
+split: calibration
+n_questions: 3
+policies: [fold, rss]
+deadlines_s: [60.0]
+latency_seeds: [1]
+out_dir: results/real
+top_k: 4
+result_token_cap: 576
+final_context_cap: 1600
+final_max_tokens: 64
+consume_out_per_result: 128  # output cap only; typical summary is ~102 tok/result (costs below). Bounded by a 3-fact schema.
+costs: {overhead_s: 0.0, prefill_s_per_tok: 0.0001729, decode_s_per_tok: 0.02934,
+        raw_tokens: 571, summary_tokens: 46, consume_base_prompt: 134, final_base_prompt: 82,
+        consume_out_base: 0, consume_out_per_result: 46, final_out: 11}

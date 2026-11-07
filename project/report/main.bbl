@@ -1,0 +1,63 @@
+\begin{thebibliography}{7}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Abhyankar et~al.(2024)Abhyankar, He, Srivatsa, Zhang, and
+  Zhang]{abhyankar2024infercept}
+Abhyankar, R., He, Z., Srivatsa, V., Zhang, H., and Zhang, Y.
+\newblock {INFERCEPT}: Efficient intercept support for augmented large language
+  model inference.
+\newblock In \emph{Proceedings of the 41st International Conference on Machine
+  Learning (ICML)}, 2024.
+
+\bibitem[Kim et~al.(2024)Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and
+  Gholami]{kim2024llmcompiler}
+Kim, S., Moon, S., Tabrizi, R., Lee, N., Mahoney, M.~W., Keutzer, K., and
+  Gholami, A.
+\newblock An {LLM} compiler for parallel function calling.
+\newblock In \emph{Proceedings of the 41st International Conference on Machine
+  Learning (ICML)}, 2024.
+
+\bibitem[Kwon et~al.(2023)Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang,
+  and Stoica]{kwon2023vllm}
+Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C.~H., Gonzalez, J.~E.,
+  Zhang, H., and Stoica, I.
+\newblock Efficient memory management for large language model serving with
+  {PagedAttention}.
+\newblock In \emph{Proceedings of the 29th Symposium on Operating Systems
+  Principles (SOSP)}, 2023.
+
+\bibitem[Lin et~al.(2024)Lin, Han, Zhang, Yang, Yang, Chen, and
+  Qiu]{lin2024parrot}
+Lin, C., Han, Z., Zhang, C., Yang, Y., Yang, F., Chen, C., and Qiu, L.
+\newblock Parrot: Efficient serving of {LLM}-based applications with semantic
+  variable.
+\newblock In \emph{18th USENIX Symposium on Operating Systems Design and
+  Implementation (OSDI)}, 2024.
+
+\bibitem[{Qwen Team}(2025)]{qwen3}
+{Qwen Team}.
+\newblock {Qwen3} technical report.
+\newblock \emph{arXiv preprint arXiv:2505.09388}, 2025.
+
+\bibitem[Yang et~al.(2018)Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and
+  Manning]{yang2018hotpotqa}
+Yang, Z., Qi, P., Zhang, S., Bengio, Y., Cohen, W.~W., Salakhutdinov, R., and
+  Manning, C.~D.
+\newblock {HotpotQA}: A dataset for diverse, explainable multi-hop question
+  answering.
+\newblock In \emph{Proceedings of the 2018 Conference on Empirical Methods in
+  Natural Language Processing (EMNLP)}, 2018.
+
+\bibitem[Zheng et~al.(2024)Zheng, Yin, Xie, Sun, Huang, Yu, Cao, Kozyrakis,
+  Stoica, Gonzalez, Barrett, and Sheng]{zheng2024sglang}
+Zheng, L., Yin, L., Xie, Z., Sun, C., Huang, J., Yu, C.~H., Cao, S., Kozyrakis,
+  C., Stoica, I., Gonzalez, J.~E., Barrett, C., and Sheng, Y.
+\newblock {SGLang}: Efficient execution of structured language model programs.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2024.
+
+\end{thebibliography}
