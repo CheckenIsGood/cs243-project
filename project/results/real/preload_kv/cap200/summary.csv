@@ -1,0 +1,3 @@
+rate,policy,preload,n,wall_s,ontime,late,dropped,error,lat_mean,lat_p50,lat_p90,f1,em
+0.45,fcfs,off,82,193.4,1.0,0.0,0.0,0.0,11.319,12.425,15.574,0.5459,0.4146
+0.45,fcfs,on,82,193.2,1.0,0.0,0.0,0.0,11.169,12.265,15.296,0.5264,0.3902

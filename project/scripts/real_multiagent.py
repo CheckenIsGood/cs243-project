@@ -23,6 +23,7 @@ from deadline_agent.datasets import load_tasks
 from deadline_agent.metrics import exact_match, f1_score
 from deadline_agent.model_client import VLLMBackend
 from deadline_agent.multiagent import CostEstimate, ServingLayer, expected_max_delay, make_workload, serve
+from deadline_agent.preload_controller import PreloadController
 from deadline_agent.tools import DelayModel
 
 PRESETS = {
@@ -33,7 +34,7 @@ PRESETS = {
                     manifest="data/manifests/multitenant.json", n_heldout=400, distractors=90, slack=[1000.0, 1000.0],
                     isolated_fanout=15.0, isolated_orchestrator=15.0, final_prompt_tokens=11000),
 }
-PRELOAD_MODES = {"off": False, "on": True, "low": "low", "jit": "jit", "chain": "chain"}
+PRELOAD_MODES = {"off": False, "on": True, "low": "low", "jit": "jit", "chain": "chain", "ctrl": "ctrl"}
 
 
 class Counting:
@@ -53,9 +54,31 @@ class Counting:
             self.inflight -= 1
 
 
-async def one_run(tasks, policy, rate, cfg, seed, a, c, base_url, model, delay, preload):
+async def server_kv_tokens(base_url) -> int | None:
+    """KV capacity in tokens from vLLM's /metrics (cache_config_info: num_gpu_blocks x block_size)."""
+    import re
+    async with httpx.AsyncClient(base_url=base_url, timeout=30) as cl:
+        txt = (await cl.get("/metrics")).text
+    for line in txt.splitlines():
+        if line.startswith("vllm:cache_config_info"):
+            nb = re.search(r'num_gpu_blocks="(\d+)"', line)
+            bs = re.search(r'block_size="(\d+)"', line)
+            ov = re.search(r'num_gpu_blocks_override="(\d+)"', line)
+            n = int(ov.group(1)) if ov else (int(nb.group(1)) if nb else None)
+            if n and bs:
+                return n * int(bs.group(1))
+    return None
+
+
+async def one_run(tasks, policy, rate, cfg, seed, a, c, base_url, model, delay, preload, kv_tokens=None, ctrl_out=None):
     async with httpx.AsyncClient(base_url=base_url, timeout=30) as cl:
         (await cl.post("/reset_prefix_cache")).raise_for_status()
+    controller = None
+    if preload == "ctrl":
+        M = kv_tokens or await server_kv_tokens(base_url)
+        if not M:
+            raise SystemExit("ctrl mode needs the server KV capacity: pass --kv-tokens")
+        controller = PreloadController(M=M, delay=(delay.lo, delay.hi, delay.slow_p, delay.slow_lo, delay.slow_hi))
     be = Counting(VLLMBackend(base_url, model))
     est = CostEstimate(decode_s_per_tok=a + c, tool_s=expected_max_delay(delay, cfg["width"]))
     est.prompt_tokens["final"] = cfg["final_prompt_tokens"]
@@ -65,8 +88,12 @@ async def one_run(tasks, policy, rate, cfg, seed, a, c, base_url, model, delay, 
                        isolated={"fanout": cfg["isolated_fanout"], "orchestrator": cfg["isolated_orchestrator"]})
     t0 = time.perf_counter()
     res = await serve(wl, be, layer, delay, seed=1, preload=preload, inline_tools=False, top_k=cfg["top_k"],
-                      result_cap=cfg["result_cap"])
+                      result_cap=cfg["result_cap"], controller=controller)
     wall = time.perf_counter() - t0
+    if controller is not None and ctrl_out is not None:
+        Path(ctrl_out).write_text(json.dumps(controller.summary(), indent=1))
+        print(json.dumps(dict(ctrl_M=controller.M, **controller.summary()["stats"],
+                              sigma_hat=round(controller.sigma_hat()[0], 3))), flush=True)
     await be.inner.aclose()
     return res, wall
 
@@ -85,6 +112,8 @@ def main():
     ap.add_argument("--out", default="results/real/multiagent")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                     help="override preset fields, e.g. --set result_cap=200 width=4 (values parsed as JSON)")
+    ap.add_argument("--kv-tokens", type=int, default=None,
+                    help="server KV capacity for the ctrl mode (default: read from the server's /metrics)")
     ap.add_argument("--delay", type=float, nargs="+", default=[0.5, 4.0, 0.3, 4.0, 12.0],
                     help="DelayModel arguments for the tool latency distribution")
     a = ap.parse_args()
@@ -108,7 +137,8 @@ def main():
         for pol in a.policies:
             for pm in a.preload_modes:
                 res, wall = asyncio.run(one_run(tasks, pol, rate, cfg, a.seed, prof["a"], prof["c"], a.base_url,
-                                                a.model, delay, PRELOAD_MODES[pm]))
+                                                a.model, delay, PRELOAD_MODES[pm], a.kv_tokens,
+                                                out / f"ctrl_r{rate:g}_{pol}.json"))
                 rows = []
                 for r in res:
                     g = gold[r.task_id.split("#")[0]]

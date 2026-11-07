@@ -1,0 +1,15 @@
+base=results/real/preload_kv/kv80k:off  treat=results/real/preload_kv/kv80k:on
+0.6   111 25.01  22.48   2.52 [ 1.18, 3.86]   0.65   39.0/ 32.7 |  5.72/ 3.19        3.73/1.44   0.03/ 0.44    0.0/2.2    |   0.95  -0.007
+base=results/real/preload_kv/kv50k:off  treat=results/real/preload_kv/kv50k:on
+0.6   111 25.13  36.42 -11.28 [-13.13,-9.37]   0.17   38.9/ 49.8 |  5.79/ 8.01        3.79/5.47   0.03/ 0.16    0.0/1.7    |   0.95  -0.008
+base=results/real/preload_kv/kv50k:off  treat=results/real/preload_kv/kv50k:low
+0.6   111 25.13  26.84  -1.71 [-3.19,-0.18]   0.40   38.9/ 38.2 |  5.79/ 5.05        3.79/2.74   0.03/ 0.28    0.0/1.8    |   0.97  -0.006
+base=results/real/preload_kv/kv40k:off  treat=results/real/preload_kv/kv40k:on
+0.6   111 24.52  35.64 -11.12 [-12.95,-9.32]   0.16   38.1/ 49.0 |  5.58/ 7.96        3.73/5.51   0.03/ 0.12    0.0/1.7    |   0.93  +0.002
+0.3    55 17.60  16.95   0.65 [-0.37, 1.72]   0.55   23.1/ 21.8 |  3.53/ 2.21        2.38/1.08   0.01/ 0.45    0.0/2.8    |   0.98  -0.004
+base=results/real/preload_kv/kv40k:off  treat=results/real/preload_kv/kv40k:low
+0.6   111 24.52  29.03  -4.51 [-6.00,-3.03]   0.25   38.1/ 39.6 |  5.58/ 5.70        3.73/3.33   0.03/ 0.16    0.0/1.6    |   0.95  -0.005
+base=results/real/preload_kv/cap40:off  treat=results/real/preload_kv/cap40:on
+0.45   82 10.97  10.88   0.09 [-0.16, 0.40]   0.67   15.2/ 15.2 |  0.44/ 0.41        0.12/0.09   0.15/ 0.58    0.0/3.6    |   0.94  -0.006
+base=results/real/preload_kv/cap200:off  treat=results/real/preload_kv/cap200:on
+0.45   82 11.32  11.17   0.15 [-0.19, 0.46]   0.55   15.6/ 15.3 |  0.57/ 0.44        0.24/0.13   0.08/ 0.52    0.0/3.4    |   0.94  -0.020
