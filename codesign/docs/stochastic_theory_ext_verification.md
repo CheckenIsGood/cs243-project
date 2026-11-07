@@ -465,3 +465,31 @@ from `codesign/`). The verifier module gained section I (unrestricted benchmark:
 3. The 2+β branch of the min never binds in the extension's tests, so dropping the min goes undetected. This is
    harmless: without the min the constant is weaker but still valid. [V: unrestricted_propK_and_DR_both_branches]
    covers the binding case.
+
+---
+
+## Final check (87186f5), 2026-11-07
+
+**What changed between c46b893 and 87186f5.** I compared these files: the extension doc, its tests and its code,
+plus the base files.
+- The extension doc and tests changed only for the five requested items (below).
+- `stochastic_theory_ext.py` is unchanged.
+- The base doc and test changes answer the other verifier: multi-parent inputs must be modelled with pieces, the
+  (L1) counterexample paragraph, the H-prompt wording, and one comment plus four asserts in
+  `test_thmD_unrestricted_benchmark_corrected_bound`. They are outside this audit, but they are consistent with
+  ruling (a).
+- Nothing changed after 87186f5.
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| 5a: `assert emin_lower_bound_holds(X, Y)` on the 58/77 witness | **VERIFIED, ruling (b) resolved** | Whole author suite under checker constant 0.76: fails (`lemmaP1_witness_58_77_refutes_larger_constants`); the same at 0.80; the checker at exactly 58/77 passes. My old guard is replaced by [V: mutations_author_lemmaP1_checker_now_protected], which asserts the opposite of the old state. |
+| 5b: two random families in `test_preload_aware_constants_H_DR_K` | **VERIFIED** | With the calibrated values held fixed: β_cp⁰ := 0 fails; dropping Gitt₁(Z′) − ΣwEZ′ fails. The doc text (§4, 50 instances, two families) matches the test. One residual: β_cp⁰ := the restricted β_cp still passes these families. That necessity is covered by my one-task instance in [V: unrestricted_thmH_chain_with_fanout_nodes], so no action is needed. |
+| 5c: 2+β branch binds (β_cp⁰ = 11, β = 7, M′ = 100) | **VERIFIED** | Recomputed independently: ALG 24, LB⁰ 15, Σwσ 14, S = 157/11, λ_D = 2295/628, min(12, 9) = 9, constant 9 + 2λ_D = 5121/314 (vs 6063/314 without the min), bound 7883/44 ≥ 24; both CP inequalities hold. Dropping the min fails; β + 1 fails. |
+| §0 pair-constant wording | **VERIFIED** | Now stated as sup_Δ ρ(Δ)/(1+Δ) ∈ [77/58, 27/16], with the lower end only at Δ = 19 and ρ(0) = 1. |
+| Thm H scope text (§4, L331–337) | **VERIFIED** | It describes the two families and the 5c instance accurately. |
+
+**Suites.** My file has 28 tests: [V: mutations_author_final_87186f5] is new, and the P1 guard is replaced. The
+full codesign suite gives **7771 passed, 13 skipped, 1 xfailed** (162 s), run from `codesign/` with
+`../project/.venv/bin/python -m pytest -q`.
+
+**Nothing in the extension remains FALSE or in need of a fix.**

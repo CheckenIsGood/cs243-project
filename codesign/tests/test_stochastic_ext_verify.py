@@ -454,22 +454,16 @@ def test_mutations_author_tests_detect_false_claims():
                     [(T, "lambda_D", lambda ts, cfg: Fr(99, 100) * old(ts, cfg))])
 
 
-def test_mutations_author_lemmaP1_checker_not_mutation_protected():
-    """Re-verification (c46b893), ruling (b). The false constants 0.76 and 0.80 are now REFUTED by the author's
-    new witness test (computed directly, independently of the checker). But the checker emin_lower_bound_holds is
-    still not mutation-protected: it is called by exactly one test, and that test passes when the checker's constant
-    is raised to 0.76 or 0.80, so the whole suite passes under that mutation. Feeding the 58/77 witness through
-    the checker (assert emin_lower_bound_holds(X, Y)) would catch any constant > 58/77."""
+def test_mutations_author_lemmaP1_checker_now_protected():
+    """Final check (87186f5), ruling (b) resolved. The witness test now feeds the 58/77 witness through
+    emin_lower_bound_holds, so raising the checker's constant to 0.76 or 0.80 makes the author's suite FAIL (the
+    whole suite was run under both mutations by hand; here the two callers are run, which is where it is called)."""
     import inspect
     T, X = _author_tests()
     from codesign.stochastic_theory import cv2
-    callers = [n for n, f in inspect.getmembers(T, inspect.isfunction)
-               if n.startswith("test_") and "emin_lower_bound_holds" in inspect.getsource(f)]
-    assert callers == ["test_lemmaP1_emin_lower_bound_and_witness"]
-    assert "emin_lower_bound_holds(" not in inspect.getsource(T.test_lemmaP1_witness_58_77_refutes_larger_constants)
-    with open(X.__file__) as fh:
-        assert fh.read().count("emin_lower_bound_holds") == 1  # only its definition: no library-internal use
-    T.test_lemmaP1_witness_58_77_refutes_larger_constants()  # the claim c* <= 58/77 < 0.76 is certified
+    callers = sorted(n for n, f in inspect.getmembers(T, inspect.isfunction)
+                     if n.startswith("test_") and "emin_lower_bound_holds" in inspect.getsource(f))
+    assert callers == ["test_lemmaP1_emin_lower_bound_and_witness", "test_lemmaP1_witness_58_77_refutes_larger_constants"]
 
     def checker(c):
         def h(d1, d2):
@@ -478,14 +472,44 @@ def test_mutations_author_lemmaP1_checker_not_mutation_protected():
             return e >= c / (1 + D) and (e >= 1 or (1 - e) ** 2 <= D / 2)
         return h
 
-    X_, Y_ = law((0, Fr(19, 20)), (20, Fr(1, 20))), law((Fr(1, 2), Fr(76, 77)), (39, Fr(1, 77)))
-    assert X.emin_lower_bound_holds(X_, Y_)  # the recommended extra assertion passes on the true checker
-    for c in (Fr(76, 100), Fr(80, 100)):
+    T.test_lemmaP1_witness_58_77_refutes_larger_constants()  # passes on the true checker
+    for c in (Fr(76, 100), Fr(80, 100), Fr(1)):
         patch = [(T, "emin_lower_bound_holds", checker(c)), (X, "emin_lower_bound_holds", checker(c))]
-        assert not _detects(T.test_lemmaP1_emin_lower_bound_and_witness, patch)  # suite misses the mutation
-        assert not checker(c)(X_, Y_)  # ...and the recommended assertion would catch it
-    assert _detects(T.test_lemmaP1_emin_lower_bound_and_witness,
-                    [(T, "emin_lower_bound_holds", checker(Fr(1))), (X, "emin_lower_bound_holds", checker(Fr(1)))])
+        assert _detects(T.test_lemmaP1_witness_58_77_refutes_larger_constants, patch)
+    assert not _detects(T.test_lemmaP1_witness_58_77_refutes_larger_constants,
+                        [(T, "emin_lower_bound_holds", checker(Fr(58, 77))), (X, "emin_lower_bound_holds", checker(Fr(58, 77)))])
+
+
+def test_mutations_author_final_87186f5():
+    """5b: with the calibrated values held fixed, the two random families of test_preload_aware_constants_H_DR_K
+    fail when beta_cp0 := 0 and when Gitt_1(Z') - sum w E Z' is dropped. 5c: dropping the min (keeping only
+    1 + beta_cp0) fails, and so does beta off by one. Plus an independent recomputation of the 5c instance."""
+    T, X = _author_tests()
+    import codesign.stochastic_theory as B
+    cache = {True: X.calibrated_constants(True), False: X.calibrated_constants(False)}
+    cal = [(T, "calibrated_constants", lambda pa=False: cache[pa])]
+    oc, ohc = X.thmH_constants, B.h_constants
+    t = T.test_preload_aware_constants_H_DR_K
+    assert not _detects(t, cal)
+    assert _detects(t, cal + [(T, "thmH_constants", lambda ts, cfg, preload_aware=False:
+                               (Fr(0), oc(ts, cfg, True)[1]) if preload_aware else oc(ts, cfg, False))])
+    assert _detects(t, cal + [(T, "gittins_single_value",
+                               lambda ts, index=X.gittins: sum(u.w * X.expected_work(u) for u in ts))])
+    assert _detects(t, cal + [(T, "thmD_new_constant", lambda ts, cfg, preload_aware=False:
+                               (lambda bcp, b, _: 1 + bcp + 2 * X.lambda_D(ts, cfg))(*ohc(ts, cfg, preload_aware)))])
+    assert _detects(t, cal + [(T, "h_constants", lambda ts, cfg, preload_aware=False:
+                               (lambda bcp, b, th: (bcp, b + 1, th))(*ohc(ts, cfg, preload_aware)))])
+    # 5c recomputed with this module (pieces -> one lag of 10; ALG never prefills before availability)
+    Tm = MT(Fr(0), Fr(1), (MN(1, 0, 1, 2), MN(11, 0, 1, 12, True)), (Fr(10),))
+    P = propK0_parts([Tm], Cfg(Fr(1), Fr(1), 1, Fr(100)))
+    assert (P["bcp0"], P["beta0"], P["alg"], P["lb0"], P["wsig"]) == (11, 7, 24, 15, 14)
+    assert P["lamD"] == Fr(2295, 628) and P["smithS"] == Fr(157, 11) and P["nodewise"] and P["additive"]
+    assert min(1 + P["bcp0"], 2 + P["beta0"]) == 9 < 12 and P["alg"] <= P["bound0"] == Fr(7883, 44)
+    # ...and it equals the author's lambda_D / thmD_new_constant on the author's pieces version
+    Ta = B.HTask(Fr(0), Fr(1), (B.HNode(q=1, X=1), B.HNode(q=11, X=1, rho=0, pieces=((B.det(0), 10), (B.det(10), 1)))),
+                 ((0, 1, B.det(0)),))
+    ca = B.HCfg(alpha=Fr(1), a=Fr(1), m=1, Mp=100)
+    assert X.lambda_D([Ta], ca) == P["lamD"] and X.thmD_new_constant([Ta], ca, True) == 9 + 2 * P["lamD"]
 
 
 def test_mutations_author_new_tests_c46b893():

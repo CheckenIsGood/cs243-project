@@ -465,3 +465,28 @@ One observation: in `test_thmD_ratio_against_engine_lower_bounds`, the new asser
 - Whether the *restricted* constant also holds against the unrestricted benchmark. The doc correctly calls this open (l. 529–531 and §10.4). No exact engine optimum has been computed.
 - The full texts of Megow–Schulz (ORL 2004) and Schulz–Skutella (J. Sched. 2002), as noted in the Thm A tightness row.
 - `stochastic_theory_ext.md` and its verification, which are out of scope for this re-verification.
+
+---
+
+## Final check (87186f5), 2026-11-07
+
+Scope: `git diff c46b893 87186f5 -- codesign/docs/stochastic_theory.md codesign/tests/test_stochastic_theory.py codesign/src/codesign/stochastic_theory.py`. The theory module is unchanged. The doc diff has exactly three hunks: l.374–376, the paragraph after the unrestricted Thm D proof, and §10.7. The test diff has exactly two: a comment, and new asserts in `test_thmD_unrestricted_benchmark_corrected_bound`. Nothing else changed in the author's three files. The working tree equals 87186f5 for `codesign/`.
+
+| Item | Verdict |
+|---|---|
+| l.525–527 reworded: "step 1 cannot use β_cp against CP⁰"; ALG = CP′ = 24 > (1+β_cp)·LB⁰ = 15 | VERIFIED |
+| Restricted-form inequality on that instance: (1+β_cp)·LB⁰ + max(1+β,θ)·S = 15 + 14 = 29 ≥ 24 | VERIFIED (own code: β_cp = β = 0, θ = 1, LB⁰ = 15, S = Smith(σ) = 14, ALG = 24) |
+| 2+β branch binds; constant min(1+11, 2+0) + (1+0) = 3 | VERIFIED |
+| Additive RHS LB⁰ + (1+β)Σwσ + (1+β)S = 15 + 14 + 14 = 43 ≥ 24 | VERIFIED. It is consistent with 3·LB⁰ = 45. The proof's literal form, with LB⁰ at q⁰ ≡ 0 (= 14), gives 42, also ≥ 24. The node-wise branch would give 12·15 + 14 = 194. |
+| Multi-parent nodes must use pieces (l.374–376) | VERIFIED. This is exactly what the arrival assumption behind q⁰ = q needs. |
+| §10.7: "we expect" plus what would need redefining; pointer to Thm DR | VERIFIED. Thm DR exists in the extension and is marked proved (restricted). It covers random X with a cap, not q̄, and the sentence scopes it to X correctly. I did not re-check the extension itself. |
+| `max(r_cp)` assertion labelled a consistency check | VERIFIED |
+| New unit asserts (tests L445–450) | VERIFIED, and non-vacuous: dropping the min makes the constant 13 ≠ 3; using the bounded-memory second term 2·max(1+β,θ) makes it 4 ≠ 3. In both mutants the test also fails earlier, at its random-instance assert. |
+
+New test: `test_final_check_87186f5_L1_counterexample_new_numbers`. It recomputes every number above with my own simulator and lower bounds.
+
+Runs from `codesign/`:
+- my suite plus the author's theory tests: 74 passed (42 + 32);
+- the full `codesign/` suite: 7772 passed, 13 skipped, 1 xfailed.
+
+Nothing remains open from the earlier rounds except the items already listed: whether the restricted constant holds against the unrestricted OPT (no exact engine OPT), and the full texts of Schulz–Skutella and Megow–Schulz.

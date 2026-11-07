@@ -672,3 +672,28 @@ def test_CROSS_CHECK_author_new_code_matches_ours():
             theirs = ST.sim_hybrid(A, convlag(lag), acfg, order=rk)
             assert mine["C"] == theirs["C"]
             assert [k for (_, _, k, _) in mine["kick_events"]] == theirs["kicked_res"]
+
+
+def test_final_check_87186f5_L1_counterexample_new_numbers():
+    """Final check (87186f5): independent recomputation of the numbers in the reworded paragraph after the
+    unrestricted Thm D proof: restricted-form RHS 15 + 14 = 29, unrestricted constant 3 (2 + beta branch binds),
+    additive-form RHS 15 + 14 + 14 = 43; all >= ALG = 24, and 43 <= 3 * LB0 = 45."""
+    sched, lb, lb0, _, T, cfg = preload_L1_counterexample()
+    lag = [{("arc", 0): Q(0), ("pc", 1, 0): Q(0), ("pc", 1, 1): Q(10)}]
+    alg = run_P([T], lag, cfg)["C"][0]
+    bcp, b, th = thmD_constants([T], cfg)
+    _, S = engine_lower_bounds([T], cfg)
+    wsig = sum(T.w * (cfg.alpha * nd.q + cfg.c * nd.X) for nd in T.nodes)
+    assert (alg, bcp, b, th, beta_cp0([T], cfg)) == (24, 0, 0, 1, 11)
+    assert lb0 == lb0_q0([T], cfg) == 15 and lb0_q0([T], cfg, zero=True) == 14 and S == 14 and wsig == 14
+    restricted_rhs = (1 + bcp) * lb0 + max(1 + b, th) * S
+    assert restricted_rhs == 29 and alg <= restricted_rhs
+    assert (1 + bcp) * lb0 < alg  # step 1 with beta_cp against CP0 fails
+    k = thmD_unrestricted_constant([T], cfg)
+    assert k == 3 and min(1 + beta_cp0([T], cfg), 2 + b) == 2 + b  # 2 + beta branch binds
+    additive_rhs = lb0 + (1 + b) * wsig + (1 + b) * S
+    assert additive_rhs == 43 and alg <= additive_rhs <= k * lb0 == 45
+    # the proof's literal additive form uses LB0 with q0 = 0 (14): 14 + 14 + 14 = 42 >= 24 too
+    assert lb0_q0([T], cfg, zero=True) + (1 + b) * wsig + (1 + b) * S == 42 >= alg
+    # node-wise branch: (1 + beta_cp0) LB0 + (1+beta) S = 12*15 + 14 = 194
+    assert (1 + beta_cp0([T], cfg)) * lb0 + (1 + b) * S == 194
