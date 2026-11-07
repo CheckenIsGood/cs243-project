@@ -15,6 +15,31 @@ Status words:
 "New" and "known" are judged in §9. Most of the arguments here are short. Their value is the model (random
 tool lags, KV memory, batching) and the explicit hypotheses, not new proof techniques.
 
+## Verification status
+
+An independent verifier audited commit e17bd7f (`docs/stochastic_theory_verification.md`, code
+`src/codesign/stochastic_verify.py`). A second verifier audited the extensions
+(`docs/stochastic_theory_ext_verification.md`) and found that Thm A's tightness is already known. This revision
+applies their fixes. "Fixed" means the text, code and tests below were changed.
+
+| Result | Verifier's verdict | Status in this revision |
+|---|---|---|
+| Lemma A1, Thm A (2 vs OPT_clair, random lags) | VERIFIED | unchanged; Smith-term test tightened (§2.3) |
+| Thm A lower bound (lag trap 4/3; "tightness open") | lag trap VERIFIED; "tightness open" FALSE (ext verifier) | **fixed**: 2 is **tight**, by the known Schulz–Skutella / Megow–Schulz family (§2.4); the lag trap is kept as a remark |
+| MSU inequality, LB2, Thm B, Thm B′ | VERIFIED | unchanged; tests tightened (γ is load-bearing, LB2 sharpness) (§3) |
+| Lemma D0 | VERIFIED (two text fixes) | **fixed** (§4.3): the case where y does not fit; simultaneous arrivals. Tightness family added |
+| Lemma D1 | VERIFIED (two text fixes) | **fixed** (§4.4): case (B) uses ℓ⁺_u and "at least m" |
+| (L1) critical-path lower bound | GAP for nodes with fan-out pieces | **fixed** (§4.1): (L1) stated for the restricted benchmark; preload-aware LB⁰ for the unrestricted one |
+| Thm D final constant | VERIFIED WITH FIX | **fixed** (§4.5): restricted benchmark keeps (1+β_cp) + 2max(1+β,θ); unrestricted benchmark gets min{1+β_cp⁰, 2+β} + 2max(1+β,θ) |
+| Thm D assumption wording | VERIFIED WITH FIX | **fixed** (§4, §10.6): token counts known **at release** |
+| (L2), (L3), (L2+L3), R0a, R1 | VERIFIED | unchanged (R0a: the time-sharing remark is added in §4.5) |
+| R0b | VERIFIED (proof is a sketch) | **relabelled** "proof sketch" (§5) |
+| R0c | VERIFIED WITH FIX (instance not an m_eff instance) | **fixed** (§5): m = 1 vs m = 8 stated as such, and a consistent m_eff instance added |
+| R5a, R5b, R5c | VERIFIED | unchanged; R5a test tightened |
+| R6 | safety VERIFIED; "exact saving" false for DAGs | **fixed** (§6.4): exact for chains only. For DAGs I go further than the verifier: the saving can be smaller **or larger** than α·(held hits), and even negative |
+| R7 | VERIFIED | item 6 updated to the tight bound 2 |
+| §9 citations | one inaccurate ("later 2+2ln2+ε" for delays) | **fixed**: dropped |
+
 ---
 
 ## 0. Results at a glance
@@ -30,7 +55,7 @@ Notation:
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
-| **R2/R4 – Thm A** | Online preemptive task-index policy P-WSPT-DAG. Pathwise C_J ≤ r_J + CP_J + (1/m)Σ_{K⪯J} W_K. Hence E[ALG] ≤ 2·OPT_clair ≤ 2·OPT_na. | **proved** | deterministic node sizes; arbitrary random (even correlated) lags; general DAGs; release dates; online; m machines; speed 1; no memory limit | 2 (lower-bound family → 4/3; worst checked 1.128) | [T: thmA_pathwise_bound_every_realization], [T: thmA_pathwise_bound_mutations_fail], [T: thmA_two_approx_vs_exact_clairvoyant_m1], [T: thmA_parallel_machines_vs_lower_bounds], [T: thmA_lag_trap_lower_bound_four_thirds], [T: thmA_clairvoyant_below_nonanticipatory_dp], [T: fanout_collapse_to_max_lag] |
+| **R2/R4 – Thm A** | Online preemptive task-index policy P-WSPT-DAG. Pathwise C_J ≤ r_J + CP_J + (1/m)Σ_{K⪯J} W_K. Hence E[ALG] ≤ 2·OPT_clair ≤ 2·OPT_na. | **proved**; 2 is **tight** (known) | deterministic node sizes; arbitrary random (even correlated) lags; general DAGs; release dates; online; m machines; speed 1; no memory limit | 2, tight: the Schulz–Skutella family (m = 1, unit weights, no lags) gives 1.9846 at n = 150; worst random instance 1.128 | [T: thmA_pathwise_bound_every_realization], [T: thmA_pathwise_bound_mutations_fail], [T: thmA_two_approx_vs_exact_clairvoyant_m1], [T: thmA_parallel_machines_vs_lower_bounds], [T: thmA_constant_two_is_tight_schulz_skutella], [T: thmA_lag_trap_lower_bound_four_thirds], [T: thmA_clairvoyant_below_nonanticipatory_dp], [T: fanout_collapse_to_max_lag] |
 | **R2/R4 – Thm B (online)** | Same policy with index w/E[W]. E[ALG] ≤ ρ·OPT_np. | **proved (restricted)** | random independent node sizes, CV² ≤ Δ; lags independent of sizes; benchmark **non-preemptive**; ALG preemptive | chains: 2 + max(1,(m−1)(Δ−1))/(2m); DAGs: 2 + max(1,(m−1)(Δ−1))/2 (worst checked 1.098) | [T: thmB_online_index_policy_vs_nonpreemptive_dp], [T: thmB_lb2_greedy_equals_task_lp], [T: thmB_constant_algebra_z3] |
 | **R2 – Thm B′ (offline LP)** | MSU LP plus lag-precedence and critical-path constraints; list policy in LP order. | **proved (restricted)** | as Thm B; offline | 2 + max(1,(m−1)Δ/m), = 3 for Δ ≤ m/(m−1) (worst checked 1.153 vs OPT_np) | [T: thmB_offline_lp_policy], [T: msu_variance_correction_is_necessary], [T: nonpreemptive_benchmark_is_necessary] |
 
@@ -38,15 +63,15 @@ Notation:
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
-| **R3 – Thm D** | Hybrid/fluid engine, KV memory, priority-prefix admission with kicks, evict-always. E[ALG] ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na. | **proved (restricted)** | deterministic token counts (prompt and output known at availability); random lags; DAGs; release dates; online; fluid engine at **speed 3**; memory **M′ = M + L_max ≤ 2M** | 3 when β = 0 and θ = 1; 2 with unbounded memory and no recompute; ≈ 10 at calibrated constants with memory (§4.6); worst checked ALG/LB 1.45 | [T: thmD_pathwise_bound_any_keep_policy_and_preload], [T: thmD_ratio_against_engine_lower_bounds], [T: thmD_hypotheses_are_necessary] |
+| **R3 – Thm D** | Hybrid/fluid engine, KV memory, priority-prefix admission with kicks, evict-always. Against OPT_na restricted to engines that do not prefill a node before it is available: E[ALG] ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na. Against the unrestricted OPT_na (may prefill returned fan-out pieces early): E[ALG] ≤ [min(1+β_cp⁰, 2+β) + 2·max(1+β, θ)]·OPT_na. | **proved (restricted)** | deterministic token counts, **known at release**; random lags; DAGs; release dates; online; fluid engine at **speed 3**; memory **M′ = M + L_max ≤ 2M** | restricted: 3 when β = 0 and θ = 1; 2 with unbounded memory and no recompute; 9.99 calibrated with memory. Unrestricted: 10.01 calibrated (§4.6). Worst checked ALG/LB 1.45 | [T: thmD_pathwise_bound_any_keep_policy_and_preload], [T: thmD_ratio_against_engine_lower_bounds], [T: thmD_hypotheses_are_necessary], [T: COUNTEREXAMPLE_L1_needs_restricted_benchmark], [T: thmD_unrestricted_benchmark_corrected_bound], [T: lemmaD0_charge_tight_family] |
 
 **R0 (engine reductions) and R1 (recompute)**
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
 | **R0a** | Fluid engine at speed 3 (prefill share 1/3) dominates the hybrid model, and no s < 3 does. Conversely, the speed-1 engine fits inside the hybrid rates. | **proved** | fluid; batch ≤ m = a/c | speed 3, tight | [T: R0a_engine_lift_and_converse_z3] |
-| **R0b** | Discrete steps at speed 3, chunk P̄ = a/α: C_J ≤ (Thm D bound) + a(\|J\| + N_J). | **proved (additive)**; the multiplicative form is open | evict-always; N_J = number of prefill completions | additive a per node and per prefill completion | [T: R0b_discrete_engine_bound] |
-| **R0c** | Crude cap m_eff = min(a/c, ⌊M′/L_max⌋) is memory-safe but loses Θ(m/m_eff). | **proved**, with a lower-bound instance | — | (n+1)/2 on the instance | [T: R0c_machine_cap_loses_m_over_meff] |
+| **R0b** | Discrete steps at speed 3, chunk P̄ = a/α: C_J ≤ (Thm D bound) + a(\|J\| + N_J). | **proof sketch** (additive) plus exact checks; the multiplicative form is open | evict-always; N_J = number of prefill completions | additive a per node and per prefill completion | [T: R0b_discrete_engine_bound] |
+| **R0c** | Crude cap m_eff = min(a/c, ⌊M′/L_max⌋) is memory-safe but loses Θ(m/m_eff). | **proved**, with lower-bound instances | — | m = 1 vs m = 8 (unbounded memory): 1286/287 ≈ (n+1)/2; consistent m_eff = 1 instance (L_max = 50, M′ = 99): > 4 | [T: R0c_machine_cap_loses_m_over_meff] |
 | **R1** | Evict-always is feasible with active-sequence memory only; the cost is the factors (1+β_cp), (1+β). | **proved** (inside Thm D) | as Thm D | β_cp = max αρ/(αq+aX), β = max(αρ+κ)/(αq+cX) | as Thm D |
 
 **R5 (keep/evict) and R6 (preloading)**
@@ -56,13 +81,13 @@ Notation:
 | **R5a** | Single prefix: the best deterministic TTL is the optimal non-anticipatory keep rule. Ratio vs clairvoyant ≤ e/(e−1), nearly tight. Exponential waits: hold iff h·E[D] < R. | **proved** (known type) | known wait law | e/(e−1) ≈ 1.582; Yao LP 1.553 on a 16-point grid | [T: R5a_best_ttl_is_optimal_and_within_e_over_e_minus_1], [T: R5a_exponential_wait_rule_z3], [T: R5a_randomized_ski_rental_density_numeric] |
 | **R5b** | Many tenants: LP over (issue, TTL) with memory dual η. Each class becomes a ski rental. At η = 0 the issue rule is BE′ (σ > σ\* = ρ_s/(1−u+ρ_s)). | **proved** (for the linearized-price LP) | first-order (linearized) latency prices | — | [T: R5b_keep_lp_strong_duality_and_sigma_star] |
 | **R5c** | Held KV in the lowest eviction class preserves Thm D for any keep policy. Per-task dominance is false. | **proved** + counterexample | priority order computed from evict-always sizes | — | [T: thmD_pathwise_bound_any_keep_policy_and_preload], [T: R5c_keep_policies_never_increase_recompute_bound_but_per_task_dominance_fails] |
-| **R6** | Lowest-priority preload chunks preserve Thm D. Isolated-task saving = α·(held prefix tokens used), exactly. | **proved** | as Thm D | — | [T: thmD_pathwise_bound_any_keep_policy_and_preload], [T: R6_isolated_preload_saving_is_exact] |
+| **R6** | Lowest-priority preload chunks preserve Thm D. For an isolated **chain** task the saving is α·(held prefix tokens used), exactly. For DAG tasks there is no such identity: the saving can be smaller or larger than that, or negative. | **proved** (safety; chain identity) + counterexamples (DAGs) | as Thm D | — | [T: thmD_pathwise_bound_any_keep_policy_and_preload], [T: R6_isolated_preload_saving_is_exact], [T: COUNTEREXAMPLE_R6_not_exact_for_DAGs_either_direction] |
 
 **R7 (lower bounds) and R8 (engine checklist)**
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
-| **R7** | (1) clairvoyant comparison hopeless (Thm 2/3, existing); (2) hold-only is unbounded; (3) adversarial arrivals (Jaillet et al., known); (4) Prop I (existing); (5) fixed-priority policies lose 1+Δ vs preemptive OPT; Ω(Δ^{1/4}) vs non-preemptive OPT (EFMM, known); P-WSPT-DAG ≥ 4/3. | **proved / known** | — | — | [T: R7_hold_only_is_unbounded], [T: R7_index_policies_lose_one_plus_delta_against_preemption], [T: thmA_lag_trap_lower_bound_four_thirds] |
+| **R7** | (1) clairvoyant comparison hopeless (Thm 2/3, existing); (2) hold-only is unbounded; (3) adversarial arrivals (Jaillet et al., known); (4) Prop I (existing); (5) fixed-priority policies have worst-case ratio ≥ 1+Δ vs preemptive OPT (a limit over instances); Ω(Δ^{1/4}) vs non-preemptive OPT (EFMM, known); (6) P-WSPT-DAG's constant 2 is tight (Schulz–Skutella, known). | **proved / known** | — | — | [T: R7_hold_only_is_unbounded], [T: R7_index_policies_lose_one_plus_delta_against_preemption], [T: thmA_constant_two_is_tight_schulz_skutella] |
 | **R8** | Engine checklist P1–P5, with the property each proof uses (§8). P3 is corrected: priority-prefix admission **with** a head-of-line stop and kicks. | **stated** | — | — | — |
 
 **Strongest statements (verbatim from the theorems below).**
@@ -71,11 +96,15 @@ Notation:
   independent of the policy), DAG tasks, release dates and online arrival, the preemptive task-index policy
   P-WSPT-DAG satisfies, on every realization, C_J ≤ r_J + CP_J + (1/m)·Σ_{K ⪯ J} W_K. Consequently
   E[Σ w_J C_J] ≤ LB_cp + (1/m)·Smith(W) ≤ 2·E[OPT_clair] ≤ 2·OPT_na. This holds at speed 1 with no augmentation.
+  The constant 2 is tight even for m = 1, unit weights and no lags (known; §2.4).
 - **Theorem D.** In the fluid engine with step time τ = a + cB + αP, run at speed 3, with memory M′ = M + L_max
   for admitted reservations: policy P (§4.2) with evict-always, any keep policy for held KV in the lowest eviction
   class, and lowest-priority preloads satisfies
-  E[Σ w_J C_J] ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na(engine, speed 1, memory M).
-  The hypotheses are deterministic token counts and random tool lags independent of the schedule.
+  E[Σ w_J C_J] ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na(engine, speed 1, memory M),
+  where OPT_na is restricted to engines that do not prefill a node before it is available. Against the
+  unrestricted OPT_na, which may prefill already-returned fan-out pieces during a tool wait, the constant is
+  min(1+β_cp⁰, 2+β) + 2·max(1+β, θ) (§4.5).
+  The hypotheses are deterministic token counts known at release and random tool lags independent of the schedule.
 
 ---
 
@@ -91,9 +120,11 @@ Task J has:
 A node becomes **available** when every predecessor u has completed and its lag D_uv has elapsed (and not before
 r_J). J completes when all its nodes have completed. The objective is E[Σ_J w_J C_J].
 
-**Tools are lags.** Tools have unlimited parallelism and are not sped up by GPU augmentation. A tool fan-out
-u → {t_1..t_k} → v therefore collapses to a single arc lag, max_i D_{t_i}
-[T: fanout_collapse_to_max_lag]. Tool chains give sums of lags along each path, and a DAG of tools gives the
+**Tools are lags.** Tools have unlimited parallelism and are not sped up by GPU augmentation. In the machine model
+M_m, a tool fan-out u → {t_1..t_k} → v therefore collapses to a single arc lag, max_i D_{t_i}
+[T: fanout_collapse_to_max_lag]. This collapse is **not** valid for the engine's lower bound. There, the fan-out's
+outputs are prompt tokens of v that return at different times (`pieces`), and a schedule may prefill the pieces
+that have returned before v is available (§4.1). Tool chains give sums of lags along each path, and a DAG of tools gives the
 max-plus path length. Lags may be correlated with each other. In Thms A and D they only need to be independent of
 the policy. In Thm B they must also be independent of node sizes.
 
@@ -141,8 +172,12 @@ speed 1 is dominated by the fluid engine at speed 3, and every engine at speed 1
   preempts. This restriction is necessary for the LP used: [T: nonpreemptive_benchmark_is_necessary] shows the
   MSU bound exceeds the preemptive optimum. No augmentation.
 - **Thm D:** benchmark OPT_na in the engine at speed 1 with memory M (preemptive, any keep policy, may keep
-  parent KV). The policy uses speed 3 (fluid engine) and memory M′ = M + L_max ≤ 2M (μ ≤ 2 when L_max ≤ M).
-  Tools are not sped up.
+  parent KV). Two versions:
+  - *restricted*: OPT_na does not prefill a node's prompt before the node is available;
+  - *unrestricted*: OPT_na may also prefill returned fan-out pieces during the remaining wait.
+
+  The policy uses speed 3 (fluid engine) and memory M′ = M + L_max ≤ 2M (μ ≤ 2 when L_max ≤ M). Tools are not
+  sped up.
 
 ---
 
@@ -199,12 +234,29 @@ realization.
   DP. All of E[ALG] ≤ LB_cp + Smith, LB_cp ≤ OPT and Smith ≤ OPT hold. Worst ALG/OPT_clair = 1.128; worst
   (LB_cp + Smith)/OPT = 1.842.
 - [T: thmA_parallel_machines_vs_lower_bounds]: m = 2, 3.
+- Both tests include 20 unit tasks released at 0, where the bound is attained (m = 1: ALG = 210 = LB_cp + Smith −
+  ΣwW) or nearly attained (m = 2: ALG = 110 ≤ 125). A Smith term understated by 20% fails there.
 - [T: thmA_clairvoyant_below_nonanticipatory_dp]: the benchmark chain LB ≤ OPT_clair ≤ OPT_na on exact DPs. The
   gap is strict on some instances, so information about lags has value.
 
-### 2.4 Lower bound for the policy (lag trap)
+### 2.4 Lower bounds for the policy: 2 is tight (known); the lag trap
 
-**Instance** (m = 1, deterministic):
+**The constant 2 is tight (known).** On single-node tasks without lags, P-WSPT-DAG is exactly P-WSPT
+(preemptive WSPT with releases). Megow–Schulz (ORL 2004, Lemma 2.2), building on Schulz–Skutella (J. Sched.
+2002), show that P-WSPT's competitive ratio is not better than 2, for any number of machines. Their family has one
+machine and unit weights: w_j = 1, p_j = n − j/n, r_j = jn − j(j+1)/(2n), for j = 0..n. P-WSPT preempts each job
+when 1/n of it remains. The non-preemptive schedule in release order upper-bounds OPT.
+
+[T: thmA_constant_two_is_tight_schulz_skutella] reproduces it exactly:
+- scaled by 6 at n = 3: ALG = 228 and OPT = 160 (exact preemptive DP, equal to the release-order schedule);
+- the ratio ALG/UB is 1.622, 1.891 and 1.9846 at n = 5, 20 and 150.
+
+So Theorem A's constant cannot be improved for this policy, even against OPT_na, with m = 1, deterministic
+sizes and no lags. This tightness result is not ours. The earlier version of this document called tightness open
+and gave 4/3 as the best lower bound; that was wrong (found by the extension verifier).
+
+**Remark: the lag trap** (m = 1, deterministic). It is kept because it shows a lag-specific failure mode, not
+because it is a strong lower bound.
 - J: a node of size ε, then a lag L, then a node of size L; weight 1.
 - K: one node of size L; weight (L+1)/(L+ε), so its index is just above J's.
 
@@ -213,8 +265,8 @@ For ε = 1: ALG = 4L+1 and OPT = 3L+2 exactly, so the ratio → 4/3
 [T: thmA_lag_trap_lower_bound_four_thirds].
 
 Index policies based on total work are blind to "start the cheap node that unlocks a long lag". A
-critical-path-aware index (e.g., an LP order with the C_J ≥ r_J + E[CP_J] constraint) avoids this trap. Tightness
-of 2 is **open**. Random search found nothing above 1.18.
+critical-path-aware index (e.g., an LP order with the C_J ≥ r_J + E[CP_J] constraint) avoids this trap. Random
+search found nothing above 1.18, far below the known family's 2.
 
 ---
 
@@ -271,6 +323,12 @@ Values:
 non-preemptive DP on 150 instances (m ∈ {1,2}, chains and fork-join DAGs, random sizes and lags). Worst
 ALG/OPT_np = 1.068 at m = 1 and 1.098 at m = 2.
 
+The same test checks that LB2's constants are sharp enough to matter (the verifier found that the random
+instances alone did not stress them):
+- *γ is needed.* Eight i.i.d. tasks {1 w.p. 9/10, 40 w.p. 1/10} on m = 2 have γ < 0. LB2 is below the expected
+  cost of a non-preemptive list schedule (69.97 ≥ OPT_np). LB2 with γ := 0 is 392/5 = 78.4, above it.
+- *No 10% slack.* On 11 unit jobs with m = 1, LB2 = 121/2 and OPT_np = 66, so 1.1·LB2 > OPT_np.
+
 ### 3.3 Theorem B′ (offline LP order)
 
 LP:
@@ -304,18 +362,37 @@ Remarks:
 ## 4. Theorem D: the engine with KV memory (R3, R1, R5c, R6)
 
 Assumptions:
-- Token counts (q, ρ, X) are known when a node becomes available. A known upper bound X̄ also works if X̄ is
-  reserved and used everywhere in place of X.
+- Token counts (q, ρ, X) of **every node of J are deterministic and known when J is released**. The index Z′_J
+  is computed at release, so knowing them only at node availability is not enough (verifier's fix). A known
+  upper bound X̄ also works if X̄ is reserved and used everywhere in place of X. Random X is handled in the
+  extension (Thm H, Thm DR).
 - Lags are random with any law independent of the schedule.
+- Prompt tokens arrive as follows. A node without pieces receives its q tokens when it becomes available (they
+  are the tool's output). A node with pieces receives piece i's tokens when piece i returns, and becomes
+  available when the last piece returns. Prompt tokens are appended after the parent context, so no token of v
+  can be prefilled before v's parent completes.
 
 ### 4.1 Lower bounds on OPT_na (engine, speed 1, memory M)
 
 These are valid for every realization of the lags, so also in expectation.
 
-- **(L1) Critical path.**
-  - Node y needs at least αq_y + (a+c)X_y seconds: OPT may keep the parent KV, and each decode step takes at least
-    a + c.
-  - Define CP^opt_J with these node lengths. Then LB_cp = Σ w_J(r_J + E CP^opt_J) ≤ OPT.
+- **(L1) Critical path, restricted benchmark.**
+  - If the benchmark does not prefill a node before it is available, node y needs at least αq_y + (a+c)X_y
+    seconds after its availability: OPT may keep the parent KV, and each decode step takes at least a + c.
+  - Define CP^opt_J with these node lengths. Then LB_cp = Σ w_J(r_J + E CP^opt_J) ≤ OPT_na(restricted).
+  - **(L1) is false for the unrestricted benchmark** when a node has fan-out pieces that return at different
+    times (verifier's counterexample, [T: COUNTEREXAMPLE_L1_needs_restricted_benchmark]). One task: plan
+    (q = 1, X = 1) → final with pieces {10 tokens, lag 0} and {1 token, lag 10}; α = a = c = 1. A speed-1 schedule
+    that prefills the 10-token piece during the wait finishes at 16, but LB_cp = 26.
+- **(L1⁰) Critical path, unrestricted benchmark.**
+  - Let q⁰_y = q_y if y has no pieces and q⁰_y = 0 otherwise. Node y needs at least αq⁰_y + (a+c)X_y seconds after
+    its availability. Decoding starts only after the full prompt is present. Without pieces the prompt arrives at
+    availability.
+  - Define CP⁰_J with these node lengths and LB⁰ = Σ w_J(r_J + E CP⁰_J) ≤ OPT_na (any engine schedule). On the
+    counterexample LB⁰ = 15 ≤ 16. If some of a piece-free node's q tokens could arrive early, set q⁰ to the part
+    that arrives at availability; q⁰ ≡ 0 (the verifier's choice) is always valid.
+- **(L0) Own GPU work.** J's GPU work σ_J = Σ_{y∈J}(αq_y + cX_y) lies in [r_J, C_J] in any schedule, so
+  Σ w_J σ_J ≤ OPT_na.
 - **(L2) GPU time.**
   - Summing step times, time ≥ c·(decode tokens) + α·(prefill tokens). With σ_y = αq_y + cX_y, OPT dominates a
     single machine with sizes σ.
@@ -350,15 +427,27 @@ These are valid for every realization of the lags, so also in expectation.
 ### 4.3 Kick accounting
 
 **Lemma D0.** When node y becomes available, the total reservation of the nodes kicked at that instant is less
-than ℓ⁺_y + L_max.
+than ℓ⁺_y + L_max. If several nodes y_1..y_k become available at the same instant, it is less than
+Σ_i ℓ⁺_{y_i} + L_max.
 
-*Proof.*
-1. The old prefix had total S_old ≤ M′. The new prefix (which contains y) stops at the first node that does not
-   fit, of size ℓ_next ≤ L_max, so S_new + ℓ_next > M′.
-2. The kicked tail totals S_old − (S_new − ℓ⁺_y) < ℓ_next + ℓ⁺_y.
-3. Completions only extend the prefix, so no other event kicks. ∎
+*Proof.* Let S_above be the total reservation of the old admitted nodes ranked above y. The old prefix had total
+S_old ≤ M′.
+1. *y fits.* The new prefix contains y and stops at the first node that does not fit, of size
+   ℓ_next ≤ L_max, so S_new + ℓ_next > M′. The kicked tail totals S_old − (S_new − ℓ⁺_y) < ℓ_next + ℓ⁺_y. (If
+   nothing stops the new prefix, nothing is kicked.)
+2. *y does not fit* (S_above + ℓ⁺_y > M′). The head-of-line stop is at y. Everything below y is kicked and y is
+   not admitted. The kicked total is S_old − S_above ≤ M′ − S_above < ℓ⁺_y.
+3. *Simultaneous arrivals.* Apply the same argument with the arrivals' total Σ_i ℓ⁺_{y_i} in place of ℓ⁺_y.
+   Charging κ_{y_i} = α(ℓ⁺_{y_i} + L_max) to each arrival covers this, since k·L_max ≥ L_max.
+4. Completions only extend the prefix, so no other event kicks. ∎
 
-The recompute therefore charged to y is at most κ_y = α(ℓ⁺_y + L_max).
+The recompute charged to each arrival y is therefore at most κ_y = α(ℓ⁺_y + L_max).
+
+**Tightness** (verifier's family, [T: lemmaD0_charge_tight_family]). z1 (ℓ⁺ = L) is decoding. z2 (ℓ⁺ = s) is
+released at L − s. A top-priority y with ℓ⁺_y = s + 1 arrives at L − 3/2, and M′ = L + s. The head-of-line stop
+kicks both z1 and z2. The kicked reservation is exactly ℓ⁺_y + L_max − 1, and the recompute exceeds
+ℓ⁺_y + L_max − 3; for (L, s) = (10, 3), (50, 20), (200, 50). So the charge is tight up to an additive 1, for
+every ℓ⁺_y.
 
 ### 4.4 Pathwise bound
 
@@ -372,9 +461,10 @@ C_J ≤ r_J + CP′_J + Σ_{K⪯J} Z′_K. Here CP′_J is the critical path wit
   recompute). The total over all such instants is ≤ Σ_{K⪯J} Σ_y [α(q_y+ρ_y) + κ_y], by Lemma D0.
 - **(A) v is admitted, in decode phase, and m higher-priority decoders run.** They decode at total rate m/a, so
   the total is ≤ Σ_{K⪯J} Σ_y (a/m)X_y = Σ cX_y.
-- **(B) v is not admitted.** Then the admitted nodes above v reserve more than M′ − ℓ⁺_v ≥ M. Three cases:
+- **(B) v is not admitted.** Then the prefix stops at some node u ⪰ v (the first one that does not fit), so the
+  admitted nodes, all above v, reserve more than M′ − ℓ⁺_u ≥ M. Three cases:
   - if one of them is prefilling, the instant is of type (C);
-  - if more than m are decoding, it is of type (A);
+  - if at least m are decoding, it is of type (A);
   - otherwise all of them run, holding reservations ≥ M. Each running decoder y accrues area ℓ⁺_y over at most
     aX_y seconds, and kicked decoders resume decoding where they stopped. So the total of these instants is
     ≤ Σ_{K⪯J} Σ_y aX_y ℓ⁺_y / M.
@@ -403,28 +493,73 @@ Constants:
 - β = max_y (αρ_y + κ_y)/(αq_y + cX_y);
 - θ = max_y ℓ⁺_y/ℓ⁻_y (θ = 1 with unbounded memory).
 
-**Theorem D (hybrid).** E[ALG] ≤ (1+β_cp)·LB_cp + max(1+β, θ)·S(σ + A/M) ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na.
+**Theorem D (hybrid, restricted benchmark).** Let OPT_na be restricted to engines that do not prefill a node
+before it is available. Then
+E[ALG] ≤ (1+β_cp)·LB_cp + max(1+β, θ)·S(σ + A/M) ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na.
 With unbounded memory: E[ALG] ≤ (1+β_cp)·LB_cp + (1+β)·Smith(σ) ≤ (2 + β_cp + β)·OPT_na.
 
 *Proof.*
-1. Node length: α(q+ρ) + aX ≤ (1+β_cp)(αq + (a+c)X).
-2. Z′_y ≤ (1+β)σ_y + θ·A_y/M ≤ max(1+β, θ)(σ_y + A_y/M), using a ≤ a+c and ℓ⁺ ≤ θℓ⁻.
+1. Node length: α(q+ρ) + aX ≤ (1+β_cp)(αq + aX) ≤ (1+β_cp)(αq + (a+c)X), so CP′_J ≤ (1+β_cp)·CP^opt_J on every
+   realization.
+2. Z′_y ≤ (1+β)σ_y + θ·A_y/M ≤ max(1+β, θ)(σ_y + A_y/M), using αρ + κ ≤ βσ, a ≤ a+c and ℓ⁺ ≤ θℓ⁻.
 3. The ranking is the Smith order of Z′, so Σ w_J Σ_{K⪯J} Z′_K = Smith(Z′) ≤ max(1+β,θ)·S(σ+A/M), since
    Smith is monotone in sizes.
 4. Apply (L1) and (L2+L3). ∎
 
+**Theorem D (hybrid, unrestricted benchmark).** Let β_cp⁰ = max_y α(q_y + ρ_y − q⁰_y)/(αq⁰_y + aX_y). Against
+every non-anticipatory engine schedule at speed 1 with memory M,
+E[ALG] ≤ min{(1+β_cp⁰)·LB⁰, LB⁰ + (1+β)·Σ_J w_J σ_J} + max(1+β, θ)·S(σ + A/M)
+       ≤ [min(1+β_cp⁰, 2+β) + 2·max(1+β, θ)]·OPT_na.
+With unbounded memory (A = 0, θ = 1, and Smith(σ) ≤ OPT_na by (L2)) the constant is
+min(1+β_cp⁰, 2+β) + (1+β) ≤ 3 + 2β.
+
+*Proof.* Lemma D1 and steps 2–3 above do not involve the benchmark. Only step 1 changes, in two alternative ways.
+- *Node-wise* (ours): α(q+ρ) + aX = (αq⁰ + aX) + α(q+ρ−q⁰) ≤ (1+β_cp⁰)(αq⁰ + (a+c)X), so CP′_J ≤ (1+β_cp⁰)·CP⁰_J.
+  Then use (L1⁰).
+- *Additive* (the verifier's): α(q+ρ) + aX ≤ (a+c)X + α(q+ρ) and α(q+ρ) ≤ (1+β)σ, so
+  CP′_J ≤ CP⁰_J + (1+β)σ_J. Then use (L1⁰) with q⁰ ≡ 0 and (L0).
+
+Both are valid, so the minimum is. ∎
+
+The node-wise form is sharper when prompts are short relative to decodes. The additive form is sharper when a
+fan-out node's prompt dominates its decode, since β_cp⁰ then blows up. On the (L1) counterexample, β_cp = 0 but
+β_cp⁰ = 11. There ALG = 24 > (1+β_cp)·LB⁰ = 15, so the restricted constant cannot simply be reused against LB⁰.
+
+Whether the restricted constant (1+β_cp) + 2max(1+β,θ) still holds against the unrestricted OPT_na is **open**.
+The proof does not cover it. No exact engine optimum was computed, by us or by the verifier, so it is not
+refuted either.
+
 **Engine version (R3).** By R0a, run P on the fluid engine at speed 3 with prefill share 1/3. Every hybrid rate
-is dominated, so the engine can reproduce the hybrid schedule by idling any surplus, and its completion times are
-no later. The lower bounds (L1–L3) are stated for the speed-1 engine. Hence:
+is dominated. The engine reproduces the hybrid schedule *exactly*, not merely faster: it time-shares a fraction
+λ = (a+cB)/(2a) ≤ 1 of the time between (u = 1/3, all B decoders) and (u = 1/3, no decoders). The verifier noted
+that this matters, since merely running faster under list scheduling could change the schedule. Memory states
+are therefore identical, and completion times are equal. The lower bounds (L0–L3, L1⁰) are stated for the
+speed-1 engine. Hence:
 
 > **Theorem D (engine).** Fluid engine, speed 3, memory M′ = M + L_max (≤ 2M when L_max ≤ M), deterministic token
-> counts, random tool lags, DAG tasks, release dates, online:
-> E[Σ w_J C_J] ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na(engine, speed 1, memory M). With β = 0 and θ = 1 this is 3. With
-> unbounded memory and no parent context it is 2 (speed 3, μ = 1).
+> counts known at release, random tool lags, DAG tasks, release dates, online:
+> E[Σ w_J C_J] ≤ [(1+β_cp) + 2·max(1+β, θ)]·OPT_na(engine, speed 1, memory M, no prefill before availability),
+> E[Σ w_J C_J] ≤ [min(1+β_cp⁰, 2+β) + 2·max(1+β, θ)]·OPT_na(engine, speed 1, memory M).
+> In the restricted version, β = 0 and θ = 1 give 3. With unbounded memory and no parent context it is 2
+> (speed 3, μ = 1). Without fan-out pieces, q⁰ = q, so β_cp⁰ = β_cp and the two versions coincide.
 
-[T: thmD_ratio_against_engine_lower_bounds] checks the first inequality exactly over all lag realizations on 200
-instances. The worst ALG / max(LB_cp, S/2) = 1.45, while the proven constant on those instances reaches 29.3. The
-proven constant is very loose.
+Checks:
+- [T: thmD_ratio_against_engine_lower_bounds] checks the first inequality exactly over all lag realizations on
+  200 instances. The worst ALG / max(LB_cp, S/2) = 1.45, while the proven constant on those instances reaches
+  29.3, so the proven constant is very loose.
+- On every instance the same test also checks the two proof steps with the exact constants:
+  - the per-node maxima equal β_cp, β and θ;
+  - Z′_K ≤ max(1+β,θ)(σ_K + A_K/M) for every task;
+  - CP′ ≤ (1+β_cp)CP^opt on every realization.
+
+  Understated constants therefore fail it. The verifier's mutation (0, −1/2, 1/2) previously passed.
+- [T: thmD_unrestricted_benchmark_corrected_bound] checks the unrestricted version exactly on 120 instances:
+  - both proof forms of step 1 on every realization;
+  - LB⁰ ≤ LB_cp;
+  - the counterexample mutation above;
+  - the calibrated value.
+- [T: thmD_pathwise_bound_any_keep_policy_and_preload] now also runs the κ and area stress instances. Z′ without
+  κ, or without the area term, fails there (previously only [T: thmD_hypotheses_are_necessary] caught these).
 
 ### 4.6 Size of the constants (calibrated, honest)
 
@@ -434,10 +569,13 @@ Representative agent task:
 - plan node: q = 2000, X = 200;
 - final node: ρ = 2200, q = 1500, X = 300.
 
-| Memory | β_cp | β | θ | Ratio |
-|---|---|---|---|---|
-| unbounded | 0.03 | 0.75 | — | 2.78 |
-| M′ = 64k tokens | 0.03 | 3.48 | 1.1 | 9.99 (dominated by κ = α(ℓ⁺ + L_max)) |
+| Memory | β_cp | β | θ | Ratio (restricted) | β_cp⁰ (final prompt a fan-out) | Ratio (unrestricted) |
+|---|---|---|---|---|---|---|
+| unbounded | 0.03 | 0.75 | — | 2.78 | 0.051 | 2.80 |
+| M′ = 64k tokens | 0.03 | 3.48 | 1.1 | 9.99 (dominated by κ = α(ℓ⁺ + L_max)) | 0.051 | 10.01 |
+
+β_cp⁰ = α(1500 + 2200)/(a·300) = 0.0506 for the final node, and 0 for the plan node. The min picks
+1 + β_cp⁰ over 2 + β. The 64k value is checked in [T: thmD_unrestricted_benchmark_corrected_bound].
 
 The κ term is an artifact of charging worst-case kick recompute per availability event. It vanishes if kicks are
 rare. Reducing it (e.g., by kick-free admission with a small reserve) is open.
@@ -455,7 +593,10 @@ rare. Reducing it (e.g., by kick-free admission with a small reserve) is open.
 
 The plan's "factor 2 each way" becomes 3 one way (tight) and 1 the other way.
 
-**R0b (discrete steps).** Engine at speed 3 with chunk P̄ = a/α and at most one prefill operation per step:
+**R0b (discrete steps; proof sketch).** The argument below is a sketch: the step-level case analysis of Lemma D1
+is not written out. The bound is supported by exact checks (ours and the verifier's independent simulator, with
+354,067 checks and no violation), not by a complete proof. Engine at speed 3 with chunk P̄ = a/α and at most one
+prefill operation per step:
 - each step lasts (a + cB + αP)/3 ≤ a;
 - each running sequence gains one token per step;
 - the server gains P̄ = a/α tokens per step, except on the last partial chunk of a prefill.
@@ -474,9 +615,14 @@ on J's path (availability rounding) and one step per prefill completion of a nod
   is loose. Speed 3 is necessary for the per-step domination (Z3).
 
 **R0c.** Running at most m_eff = min(a/c, ⌊M′/L_max⌋) sequences is trivially memory-safe. The work term of
-Lemma A1 grows by m/m_eff. Lower-bound instance [T: R0c_machine_cap_loses_m_over_meff]: n = m = 8 equal decodes
-that all fit in memory, with m_eff = 1, give the exact ratio 1286/287 ≈ 4.48 ~ (n+1)/2. The area term of Thm D is
-the plan's "better" alternative, and it avoids this loss.
+Lemma A1 grows by m/m_eff. Lower-bound instances [T: R0c_machine_cap_loses_m_over_meff]:
+- *m = 1 versus m = 8* (unbounded memory; this is a comparison of machine counts, not an instance of the m_eff
+  rule): n = 8 equal decodes give the exact ratio 1286/287 ≈ 4.48 ~ (n+1)/2.
+- *A consistent m_eff instance* (the verifier's). Add one low-weight long-context task (q = 40, X = 10,
+  ℓ⁺ = 50, w = 1/1000) and take M′ = 99. Then L_max = 50 and m_eff = min(8, ⌊99/50⌋) = 1, while policy P fits all
+  eight 11-token decodes. The eight short tasks' total completion time is more than 4 times larger under the cap.
+
+The area term of Thm D is the plan's "better" alternative, and it avoids this loss.
 
 **R1.** Evict-always never holds KV across a tool wait, so only active reservations count (ℓ⁺ of admitted
 nodes). Its cost is inside Thm D: (1+β_cp) on the critical path and (1+β) on the load. This extends Thm 7 of
@@ -558,10 +704,26 @@ gives an exact instance (m = 1, unbounded memory, held KV plus preload):
 Preload chunks run only when the server has no admitted prefill and use only unreserved memory. So they are
 invisible to Lemma D1, and Thm D holds unchanged (same test, configurations with `preload=True`).
 
-For an isolated task, the saving is exactly α times the number of held prefix tokens used: the evict-always
-completion minus the hold-plus-preload completion equals α·(held hits) [T: R6_isolated_preload_saving_is_exact].
-On more than 20 of 60 instances the hits exceed the parent context, so preloading strictly helps. This is the
-`preload_theory.md` P4 saving in the new model.
+**Chain tasks.** For an isolated chain task, the saving is exactly α times the number of held prefix tokens used:
+the evict-always completion minus the hold-plus-preload completion equals α·(held hits)
+[T: R6_isolated_preload_saving_is_exact]. On a chain every node is on the critical path and nothing competes for
+the server or decoders, so each held token removes exactly α seconds. On more than 20 of 60 instances the hits
+exceed the parent context, so preloading strictly helps. This is the `preload_theory.md` P4 saving in the new
+model.
+
+**DAG tasks: no identity.** The earlier version claimed exactness for all tasks, and the verifier refuted it for
+DAGs, with saving 1/2 < α·(held hits) = 1 (a hit off the critical path). The verifier's suggested replacement, "at
+most α·(held hits)", is **also false**. Parallel branches of one task compete for the server and the decoders, so
+removing prefill work can reorder them (a Graham-type anomaly). The exact instances, all with unbounded memory and
+cross-checked with the verifier's simulator, are in [T: COUNTEREXAMPLE_R6_not_exact_for_DAGs_either_direction]:
+1. *Smaller* (verifier): saving 1/2, α·hits = 1.
+2. *Larger.* α = 1/4, m = 1; plan (q = 1, X = 1) → a (q = 2, X = 1, ρ = 1, lag 1) and → b (q = 3, X = 1, ρ = 2,
+   lag 0). Holding
+   lets b finish its prefill before a arrives. Completion goes 5 → 4: saving 1 > α·hits = 3/4.
+3. *Negative.* α = 1/4, m = 2; plan (q = 3, X = 1) → a (q = 2, X = 1, lag 1), → b (q = 1, X = 2, ρ = 1, lag 1),
+   → c (q = 3, X = 3, lag 0). Holding makes the isolated task *later*: 6 → 25/4.
+
+What survives for DAGs is the safety statement: Thm D's bound holds with any keep and preload policy (§6.3).
 
 ---
 
@@ -584,11 +746,14 @@ On more than 20 of 60 instances the hits exceed the parent context, so preloadin
      (n+1)/(nq+2−q) → 1/q = 1+Δ.
    - Also with P ≥ 1 via the exact preemptive DP (ratio > 6/5)
      [T: R7_index_policies_lose_one_plus_delta_against_preemption].
-   - So against the **preemptive** benchmark, index policies such as ours must lose Ω(Δ). This is folklore-type;
+   - So against the **preemptive** benchmark, the worst-case ratio of index policies such as ours is at least
+     1+Δ (a supremum over instances, approached as n → ∞). This is folklore-type;
      a Gittins/SEPT-with-probing policy is needed.
    - (ii) Against the non-preemptive benchmark, index policies lose Ω(Δ^{1/4}) (Eberle–Fischer–Matuschke–Megow,
      ORL 2019, Thm 1, known).
-6. **P-WSPT-DAG ≥ 4/3** (lag trap, §2.4).
+6. **P-WSPT-DAG's constant 2 is tight** (§2.4). This is known: Schulz–Skutella / Megow–Schulz Lemma 2.2 give a
+   one-machine, unit-weight, lag-free family with ratio → 2
+   [T: thmA_constant_two_is_tight_schulz_skutella]. The lag trap (4/3) is a remark.
 
 ---
 
@@ -655,12 +820,16 @@ modest: random lags enter only the critical-path constraint and the pathwise lem
 Our Thm B is essentially WSEPT plus the MSU bound plus a pathwise bound, extended to tasks and lags. We expect a
 specialist to find it unsurprising.
 
-**Megow–Schulz (ORL 2004).** P-WSPT is 2-competitive for deterministic online preemptive scheduling. Thm A is its
-direct extension to DAG tasks with random lags and is proved the same way. The only new observation is that lags
-contribute only to the critical-path term, so the ratio vs **clairvoyant** OPT stays 2 even with random lags.
+**Megow–Schulz (ORL 2004).** P-WSPT is 2-competitive for deterministic online preemptive scheduling. Their
+Lemma 2.2, building on Schulz–Skutella (J. Sched. 2002), shows that 2 is tight. Thm A is its direct extension to
+DAG tasks with random lags and is proved the same way, so its tightness is inherited (§2.4). The only new
+observation is that lags contribute only to the critical-path term, so the ratio vs **clairvoyant** OPT stays 2
+even with random lags.
 
-**Queyranne–Schulz (SICOMP 2006).** Deterministic precedence *delays*, non-preemptive, ratio 4 (later
-2 + 2ln2 + ε). Ours are random lags with a preemptive policy, and a better constant only because of preemption.
+**Queyranne–Schulz (SICOMP 2006).** Deterministic precedence *delays*, non-preemptive, ratio 4. (An earlier
+version said "later 2 + 2ln2 + ε". That result (Li, arXiv 1707.08039) is for P|prec|ΣwC and does not cover delays,
+so the remark is dropped.) Ours are random lags with a preemptive policy, and a better constant only because of
+preemption.
 
 **Continuum (2511.02230).** TTL pinning by predicted tool duration, empirical only. R5a gives the optimal TTL
 under a known law and its e/(e−1) worst case, which is the known stochastic ski-rental structure. R5b, linking
@@ -675,11 +844,14 @@ is what we would call new.
 - (i) The model: DAG agent tasks with random tool lags on a batched engine with KV memory, prefill/decode split
   and explicit augmentation.
 - (ii) Thm D and its proof (Lemma D0 kick accounting, three-way wait partition), with exact counterexamples
-  showing kicks, κ and the L_max margin are each needed.
+  showing kicks, κ and the L_max margin are each needed. The (L1) gap and its fix (restricted benchmark, or
+  LB⁰ with the corrected constant) are due to the verifier, as are the additive form 2+β and the D0 tightness
+  family. The node-wise form 1+β_cp⁰ is ours.
 - (iii) R5b/R5c: σ\* as a memory-dual condition; the safety theorem and its per-task failure; the corrected P3.
 - (iv) Exact machine checks of every claimed inequality on small instances.
 
-**What is not new.** The MSU bound, Smith/WSEPT arguments, area lower bound, ski rental, EFMM, Jaillet.
+**What is not new.** The MSU bound, Smith/WSEPT arguments, area lower bound, ski rental, EFMM, Jaillet, and the
+tightness of Thm A's 2 (Schulz–Skutella, Megow–Schulz).
 
 ---
 
@@ -688,32 +860,43 @@ is what we would call new.
 1. **Random output lengths in Thm D.** Admission needs ℓ⁺, so X must be known or replaced by a reserved upper
    bound X̄; Thm D then holds with X̄ in the memory terms. A Δ-dependent engine theorem (Thm B lifted to the
    engine) is **open**. The obstacle is that S(σ + A/M) needs an MSU-type inequality for the memory area.
-2. **Preemptive benchmark with random sizes.** Our index policies must lose 1+Δ (R7.5). A Gittins/probing policy
+   (Partly addressed in `docs/stochastic_theory_ext.md`: Thm H, unbounded memory; Thm DR, cap reservations vs
+   OPT_clair.)
+2. **Preemptive benchmark with random sizes.** Our index policies have worst-case ratio ≥ 1+Δ (R7.5, a limit over instances). A Gittins/probing policy
    with a matching analysis (Megow–Vredeveld route) is the most promising next step for R2 vs OPT_na with random
-   sizes.
-3. **Tightness of Thm A.** The gap is between 4/3 and 2. A critical-path-aware index should beat the lag trap.
-4. **Large constants in Thm D with memory.** These come from κ and θ (≈ 10 at calibrated values, versus a worst
+   sizes. (Addressed for chains in `docs/stochastic_theory_ext.md`, Thm G.)
+3. **Thm A is tight; beating it needs a different policy.** P-WSPT-DAG's 2 is tight (known, §2.4). Whether a
+   different online policy beats 2 vs OPT_na with random lags is open. A critical-path-aware index should at least
+   avoid the lag trap.
+4. **Thm D against the unrestricted benchmark.** The proven constant is min(1+β_cp⁰, 2+β) + 2max(1+β,θ). Whether
+   the restricted constant (1+β_cp) + 2max(1+β,θ) also holds is open. The proof does not cover it, and no exact
+   engine optimum has been computed to test it.
+5. **Large constants in Thm D with memory.** These come from κ and θ (≈ 10 at calibrated values, versus a worst
    checked instance ratio of 1.45). A kick-free admission rule with a reserve, or amortizing kicks against
    lower-priority work, could remove κ.
-5. **Discrete engine.** The kick count per node and the multiplicative form of R0b are open. The attention term
+6. **Discrete engine.** R0b is a proof sketch. The kick count per node and the multiplicative form of R0b are
+   open. The attention term
    κ·P·ctx is ignored; it could be folded into an effective α.
-6. **Prompt sizes known at release** (H-prompt). The tool outputs' token counts are assumed known at node
-   availability, which is realistic because they are known when the tool returns.
-7. **Lag independence.** Thm A/D need lags independent of the schedule. Lags that depend on load (shared tool
+7. **Token counts known at release** (H-prompt). The index Z′_J is computed at release, so Thm D needs every node's
+   q, ρ and X at release, including the token counts of tool outputs that have not returned yet. Knowing them only
+   at node availability is **not** enough. That would be the realistic assumption, but the policy and proof do not
+   cover it. Upper bounds known at release (reserved as X̄, q̄) restore the theorem with those bounds in Z′ and in
+   the constants.
+8. **Lag independence.** Thm A/D need lags independent of the schedule. Lags that depend on load (shared tool
    back-ends) are not covered.
-8. **R5b uses linearized prices.** The exact queueing objective is not an LP.
+9. **R5b uses linearized prices.** The exact queueing objective is not an LP.
 
 ---
 
 ## Appendix: machine checks index
 
-27 tests in `tests/test_stochastic_theory.py`, about 18 s.
+32 tests in `tests/test_stochastic_theory.py`, about 25 s.
 
 | Test | Section |
 |---|---|
-| thmA_* (6), fanout_collapse_to_max_lag | §2 |
+| thmA_* (7, including constant_two_is_tight_schulz_skutella), fanout_collapse_to_max_lag | §2 |
 | thmB_* (4), msu_variance_correction_is_necessary, nonpreemptive_benchmark_is_necessary | §3 |
-| thmD_* (3), R5c_*, R6_* | §4, §6 |
+| thmD_* (4), COUNTEREXAMPLE_L1_needs_restricted_benchmark, lemmaD0_charge_tight_family, R5c_*, R6_*, COUNTEREXAMPLE_R6_not_exact_for_DAGs_either_direction | §4, §6 |
 | R0a_*, R0b_*, R0c_* | §5 |
 | R5a_* (3), R5b_* | §6 |
 | R7_* (2) | §7 |

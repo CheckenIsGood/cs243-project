@@ -22,7 +22,7 @@ from functools import lru_cache
 from typing import Sequence
 
 from codesign.stochastic_theory import (
-    MTask, HCfg, HNode, HTask, Dist, det, dist, mean, opt_pmtn_dp, smith, h_sizes, h_Lmax, h_constants,
+    MTask, HCfg, HNode, HTask, Dist, cv2, det, dist, mean, opt_pmtn_dp, smith, h_sizes, h_Lmax, h_constants,
 )
 
 DONE = "DONE"
@@ -354,12 +354,19 @@ def strip_release_and_lags(tasks):
 @dataclass(frozen=True)
 class RNode:
     """Hybrid-model LLM node with RANDOM output length X ~ law (X >= 1, revealed token by token). q new prompt
-    tokens, rho recomputed parent-context tokens (evict-always), plus ctx * (parent's realized X)."""
+    tokens, rho recomputed parent-context tokens (evict-always), plus ctx * (parent's realized X). fanout=True
+    marks a prompt made of staggered tool pieces that an unrestricted benchmark may prefill before the node is
+    available (then q0 = 0 in the preload-aware lower bound; verification fix of base (L1))."""
 
     q: int
     law: Dist
     rho: int = 0
     ctx: int = 0
+    fanout: bool = False
+
+    @property
+    def q0(self):
+        return 0 if self.fanout else self.q
 
 
 @dataclass(frozen=True)
@@ -382,13 +389,18 @@ def s_process(T: RTask, cfg: HCfg) -> PTask:
 
 
 def hyb_cp(T: RTask, Xs, Ds, cfg: HCfg, kind: str) -> F:
-    """Critical path. 'alg': alpha (q + rho + ctx prevX) + a X per node; 'opt': alpha q + (a + c) X."""
+    """Critical path. 'alg': alpha (q + rho + ctx prevX) + a X per node; 'opt': alpha q + (a + c) X (restricted
+    benchmark: no prefill before availability); 'opt0': alpha q0 + (a + c) X (any engine schedule)."""
     tot, px = F(0), 0
     for nd, x in zip(T.nodes, Xs):
         if kind == "alg":
             tot += cfg.alpha * (nd.q + nd.rho + nd.ctx * px) + cfg.a * x
-        else:
+        elif kind == "opt":
             tot += cfg.alpha * nd.q + (cfg.a + cfg.c) * x
+        elif kind == "opt0":
+            tot += cfg.alpha * nd.q0 + (cfg.a + cfg.c) * x
+        else:
+            raise ValueError(kind)
         px = x
     return tot + sum(Ds)
 
@@ -478,26 +490,31 @@ def cumulative_domination(Zp: PTask, Sp: PTask) -> F:
     return best
 
 
-def thmH_constants(tasks: Sequence[RTask], cfg: HCfg):
-    """beta_cp (node-wise, worst X) and lambda (cumulative domination of Z' by s)."""
+def thmH_constants(tasks: Sequence[RTask], cfg: HCfg, preload_aware: bool = False):
+    """beta_cp (node-wise, worst X) and lambda (cumulative domination of Z' by s). preload_aware=True returns
+    beta_cp0 = max alpha (q + rho - q0) / (alpha q0 + a X_min) (constant against LB0) instead of beta_cp."""
     bcp = F(0)
     for T in tasks:
         xmax_prev = 0
         for nd in T.nodes:
             xmin = min(v for v, _ in nd.law)
             rho = nd.rho + nd.ctx * xmax_prev
-            bcp = max(bcp, cfg.alpha * rho / (cfg.alpha * nd.q + cfg.a * xmin))
+            if preload_aware:
+                bcp = max(bcp, cfg.alpha * (nd.q + rho - nd.q0) / (cfg.alpha * nd.q0 + cfg.a * xmin))
+            else:
+                bcp = max(bcp, cfg.alpha * rho / (cfg.alpha * nd.q + cfg.a * xmin))
             xmax_prev = max(v for v, _ in nd.law)
     lam = max(cumulative_domination(z_process(T, cfg), s_process(T, cfg)) for T in tasks)
     return bcp, lam
 
 
-def lb_cp_h(tasks, cfg) -> F:
+def lb_cp_h(tasks, cfg, preload_aware: bool = False) -> F:
+    kind = "opt0" if preload_aware else "opt"
     tot = F(0)
     for T in tasks:
         e = F(0)
         for prob, Xs, Ds in r_realizations([T]):
-            e += prob * hyb_cp(T, Xs[0], Ds[0], cfg, "opt")
+            e += prob * hyb_cp(T, Xs[0], Ds[0], cfg, kind)
         tot += T.w * (T.r + e)
     return tot
 
@@ -509,14 +526,17 @@ def lambda_D(tasks: Sequence[HTask], cfg: HCfg) -> F:
     return max(z / (s + a) for z, s, a in zip(Z, S, A))
 
 
-def thmD_old_constant(tasks, cfg) -> F:
-    bcp, b, th = h_constants(tasks, cfg)
-    return (1 + bcp) + 2 * max(1 + b, th)
+def thmD_old_constant(tasks, cfg, preload_aware: bool = False) -> F:
+    bcp, b, th = h_constants(tasks, cfg, preload_aware)
+    first = min(1 + bcp, 2 + b) if preload_aware else 1 + bcp
+    return first + 2 * max(1 + b, th)
 
 
-def thmD_new_constant(tasks, cfg) -> F:
-    bcp, _, _ = h_constants(tasks, cfg)
-    return (1 + bcp) + 2 * lambda_D(tasks, cfg)
+def thmD_new_constant(tasks, cfg, preload_aware: bool = False) -> F:
+    """Prop K constant (1 + beta_cp) + 2 lambda_D; preload_aware: min(1 + beta_cp0, 2 + beta) + 2 lambda_D."""
+    bcp, b, _ = h_constants(tasks, cfg, preload_aware)
+    first = min(1 + bcp, 2 + b) if preload_aware else 1 + bcp
+    return first + 2 * lambda_D(tasks, cfg)
 
 
 # ======================================================================== 6. Thm A lower-bound family
@@ -593,10 +613,15 @@ class CapNode(HNode):
     """HNode whose admission reservation uses a cap xres >= X (reserve l- + xres; decode only X tokens)."""
 
     xres: int = 0
+    fanout: bool = False
 
     @property
     def l_plus(self):
         return self.rho + self.q + max(self.X, self.xres)
+
+    @property
+    def q0(self):
+        return 0 if (self.pieces or self.fanout) else self.q
 
 
 @dataclass(frozen=True)
@@ -604,6 +629,7 @@ class DRNode:
     q: int
     law: Dist  # output length X, support <= xcap
     rho: int = 0
+    fanout: bool = False  # prompt = staggered tool pieces (q0 = 0 in the preload-aware lower bound)
 
     @property
     def xcap(self):
@@ -638,7 +664,7 @@ def dr_realizations(tasks: Sequence[DRTask]):
                 lag[s[1]][("a", 0)] = v
         hts = []
         for t, T in enumerate(tasks):
-            nodes = tuple(CapNode(q=nd.q, X=X[t][i], rho=nd.rho, xres=nd.xcap) for i, nd in enumerate(T.nodes))
+            nodes = tuple(CapNode(q=nd.q, X=X[t][i], rho=nd.rho, xres=nd.xcap, fanout=nd.fanout) for i, nd in enumerate(T.nodes))
             arcs = ((0, 1, det(0)),) if len(nodes) == 2 else ()
             hts.append(HTask(T.r, T.w, nodes, arcs))
         yield prob, hts, lag
@@ -663,3 +689,45 @@ def dr_expected_sizes(tasks: Sequence[DRTask], cfg: HCfg):
 def dr_order(tasks, cfg):
     EZ = dr_expected_sizes(tasks, cfg)[0]
     return sorted(range(len(tasks)), key=lambda t: (-(tasks[t].w / EZ[t]), t))
+
+
+def thmDR_constant(tasks: Sequence[DRTask], cfg: HCfg, preload_aware: bool = False) -> float:
+    """Thm DR constant (first) + 2 lambda_E rho(Delta_s), rho = min(27/16 (1+D), 1/(1-sqrt(D/2))) (second branch
+    only for D < 2). first = 1 + beta_cp (restricted benchmark) or min(1 + beta_cp0, 2 + beta) (unrestricted)."""
+    import math
+
+    EZ, sl, _ = dr_expected_sizes(tasks, cfg)
+    Es = [sum(v * p for v, p in l) for l in sl]
+    D = max(cv2(l) for l in sl)
+    lamE = max(z / e for z, e in zip(EZ, Es))
+    consts = [h_constants(h, cfg, preload_aware) for _, h, _ in dr_realizations(tasks)]
+    bcp, b = max(c[0] for c in consts), max(c[1] for c in consts)
+    first = min(1 + bcp, 2 + b) if preload_aware else 1 + bcp
+    rho = 27 / 16 * (1 + float(D))
+    if D < 2:
+        rho = min(rho, 1 / (1 - math.sqrt(float(D) / 2)))
+    return float(first) + 2 * float(lamE) * rho
+
+
+def calibrated_constants(preload_aware: bool = False) -> dict:
+    """Calibrated constants (alpha = 0.000114, a = 0.027767, m = 51; plan q = 2000 -> final q = 1500, rho = 2200,
+    lag 1). With preload_aware=True the final prompt is treated as a staggered fan-out (q0 = 0) and the benchmark
+    may prefill it early (verification fix of (L1)). Keys: H_det, H_rand (Thm H), DR (Thm DR, M' = 64k), K32/K64/
+    K128 (Prop K) and D64 (Thm D, M' = 64k)."""
+    al, a = F("0.000114"), F("0.027767")
+    fo = preload_aware
+    lp, lf = dist((50, 1), (200, 2), (800, 1)), dist((100, 1), (300, 2), (1200, 1))
+    cH = HCfg(alpha=al, a=a, m=51)
+    out = {}
+    for key, (x1, x2) in (("H_det", (det(200), det(300))), ("H_rand", (lp, lf))):
+        T = RTask(F(0), F(1), (RNode(q=2000, law=x1), RNode(q=1500, law=x2, rho=2200, fanout=fo)), (det(1),))
+        bcp, lam = thmH_constants([T], cH, preload_aware)
+        out[key] = 1 + bcp + lam
+    TD = DRTask(F(0), F(1), (DRNode(q=2000, law=lp), DRNode(q=1500, law=lf, rho=2200, fanout=fo)), det(1))
+    out["DR"] = thmDR_constant([TD], HCfg(alpha=al, a=a, m=51, Mp=64000), preload_aware)
+    pieces = ((det(1), 750), (det(1), 750)) if fo else ()
+    TK = HTask(F(0), F(1), (HNode(q=2000, X=200), HNode(q=1500, X=300, rho=2200, pieces=pieces)), ((0, 1, det(1)),))
+    for M in (32000, 64000, 128000):
+        out[f"K{M // 1000}"] = thmD_new_constant([TK], HCfg(alpha=al, a=a, m=51, Mp=M), preload_aware)
+    out["D64"] = thmD_old_constant([TK], HCfg(alpha=al, a=a, m=51, Mp=64000), preload_aware)
+    return out

@@ -168,6 +168,12 @@ def test_thmG_parallel_machines_consistency():
         lb, g = lb_cp_p(ts), gittins_single_value(strip_release_and_lags(ts))
         ew = sum(T.w * expected_work(T) for T in ts)
         assert alg <= lb + (g - ew) / 2 and g / 2 <= dp and lb <= dp
+    # the 1/m factor is exercised: four unit jobs on m = 2: ALG = 6 <= 4 + (10 - 4)/2 = 7, but 4 + (10 - 4)/4 < 6
+    ts = [machine_ptask(0, 1, [det(1)], []) for _ in range(4)]
+    alg, lb, g = expected_gittins_machines(ts, 2), lb_cp_p(ts), gittins_single_value(ts)
+    ew = sum(T.w * expected_work(T) for T in ts)
+    assert (alg, lb, g, ew) == (6, 4, 10, 4)
+    assert alg <= lb + (g - ew) / 2 and alg > lb + (g - ew) / 4
 
 
 def test_thmG_hypotheses_are_necessary():
@@ -233,6 +239,16 @@ def test_thmH_ratio_domination_and_gittins_optimality():
         ez = sum(T.w * expected_work(z) for T, z in zip(ts, Z))
         assert gz <= lam * gs
         assert alg <= (1 + bcp) * lb + gz - ez <= (1 + bcp + lam) * max(lb, gs)
+    # beta_cp is load-bearing: one chain task, final node with rho = 20: ALG = 15/2 = (1+0) LB_cp + 3 > LB_cp,
+    # and the bound with the exact beta_cp = 4 holds
+    T = RTask(F(0), F(1), (RNode(q=1, law=det(1)), RNode(q=1, law=det(1), rho=20)), (det(0),))
+    cfg = HCfg(alpha=F(1, 4), a=F(1), m=1)
+    alg = sum(prob * sim_gittins_hybrid([T], Xs, Ds, cfg)[0] for prob, Xs, Ds in r_realizations([T]))
+    bcp, lam = thmH_constants([T], cfg)
+    Z = [z_process(T, cfg)]
+    lb, gz, ez = lb_cp_h([T], cfg), gittins_single_value(strip_release_and_lags(Z)), expected_work(Z[0])
+    assert alg == F(15, 2) and lb == F(9, 2) and bcp == 4 and gz == ez
+    assert lb + gz - ez < alg <= (1 + bcp) * lb + gz - ez
 
 
 def test_thmH_fixed_priority_mutation_fails():
@@ -259,6 +275,37 @@ def test_thmH_calibrated_constant():
     Td = RTask(F(0), F(1), (RNode(q=2000, law=det(200)), RNode(q=1500, law=det(300), rho=2200)), (det(1),))
     bcp, lam = thmH_constants([Td], cfg)
     assert F(252, 100) < 1 + bcp + lam < F(253, 100)
+
+
+def test_preload_aware_constants_H_DR_K():
+    """(L1) fix inherited by Thm H, Thm DR, Prop K. Unrestricted benchmark (the final prompt is a staggered fan-out
+    the benchmark may prefill early): beta_cp -> beta_cp0 = alpha(q + rho - q0)/(alpha q0 + a X_min), q0 = 0.
+    Calibrated: H 2.52 -> 2.54 (det X), 2.67 -> 2.74 (random X); DR 8.68 -> 8.74; Prop K 5.80 -> 5.82 (64k);
+    Thm D 9.99 -> 10.01. Exact on random Thm H instances: E[ALG] <= (1+beta_cp0) LB0 + Gitt_1(Z') - sum w E Z'."""
+    old, new = calibrated_constants(False), calibrated_constants(True)
+    assert F(252, 100) < old["H_det"] < F(253, 100) and F(254, 100) < new["H_det"] < F(255, 100)
+    assert F(267, 100) < old["H_rand"] < F(268, 100) and F(274, 100) < new["H_rand"] < F(275, 100)
+    assert 8.67 < old["DR"] < 8.68 and 8.74 < new["DR"] < 8.75
+    assert F(579, 100) < old["K64"] < F(580, 100) and F(582, 100) < new["K64"] < F(583, 100)
+    assert F(998, 100) < old["D64"] < F(999, 100) and F(1000, 100) < new["D64"] < F(1001, 100)
+    al, a = F("0.000114"), F("0.027767")
+    assert new["H_rand"] - old["H_rand"] == al * 3700 / (a * 100) - al * 2200 / (al * 1500 + a * 100)
+    rng = random.Random(21)
+    for _ in range(30):
+        ts = []
+        for _ in range(2):
+            T = _rtask_h(rng)
+            nodes = tuple(RNode(n.q, n.law, n.rho, n.ctx, fanout=(i > 0)) for i, n in enumerate(T.nodes))
+            ts.append(RTask(T.r, T.w, nodes, T.lags))
+        cfg = HCfg(alpha=F(1, 4), a=F(1), m=rng.choice([1, 2]))
+        alg = sum(prob * sum(T.w * c for T, c in zip(ts, sim_gittins_hybrid(ts, Xs, Ds, cfg)))
+                  for prob, Xs, Ds in r_realizations(ts))
+        Z = strip_release_and_lags([z_process(T, cfg) for T in ts])
+        gz, ez = gittins_single_value(Z), sum(T.w * expected_work(z) for T, z in zip(ts, Z))
+        bcp0, _ = thmH_constants(ts, cfg, preload_aware=True)
+        lb0 = lb_cp_h(ts, cfg, preload_aware=True)
+        assert lb0 <= lb_cp_h(ts, cfg)
+        assert alg <= (1 + bcp0) * lb0 + gz - ez
 
 
 # ===================================================================== Prop K (sharper Thm D constant)
@@ -304,9 +351,9 @@ def test_D0_kick_charge_is_tight_per_event():
 
 # ===================================================================== Thm A lower bound (sqrt 2)
 def test_thmA_lower_bound_sqrt2():
-    """P-WSPT (= P-WSPT-DAG without lags) on one machine: job A (p = w = L) and k unit jobs of weight 1+eps
-    released at L-1. Exact simulation = closed form; for small sizes the exact DP confirms OPT = 'A first';
-    the ratio tends to sqrt(2) at k ~ sqrt(2) L."""
+    """Remark only (superseded: Schulz-Skutella's known family gives 2, so Thm A is tight; see the base test
+    test_thmA_constant_two_is_tight_schulz_skutella). P-WSPT on one machine: job A (p = w = L) and k unit jobs of
+    weight 1+eps released at L-1; exact simulation = closed form; the ratio tends to sqrt(2) (never reached)."""
     for L, k in ((3, 4), (4, 5)):
         ts, alg, ub = wspt_sqrt2_instance(L, k)
         assert expected_cost(ts, 1, task_index_order(ts)) == alg
@@ -322,8 +369,8 @@ from codesign.stochastic_theory import (  # noqa: E402
     cv2, h_cp, index_vs_pmtn_ratio, lb_cp, mean, opt_clair_1m, MTask, chain_task,
 )
 from codesign.stochastic_theory_ext import (  # noqa: E402
-    CapNode, DRNode, DRTask, dr_expected_sizes, dr_order, dr_realizations, emin, emin_lower_bound_holds,
-    normalize, pair_ratio_bound, smith_clairvoyant, smith_expected,
+    CapNode, DRNode, DRTask, calibrated_constants, dr_expected_sizes, dr_order, dr_realizations, emin,
+    emin_lower_bound_holds, normalize, pair_ratio_bound, smith_clairvoyant, smith_expected,
 )
 import z3  # noqa: E402
 
@@ -356,6 +403,18 @@ def test_lemmaP1_emin_lower_bound_and_witness():
     q = F(1, 7)
     B = dist((0, 1 - q), (1 / q, q))
     assert emin(B, B) == q * q * (1 / q) and (1 + cv2(B)) * emin(B, B) == q * (1 / q) * q * (1 / q) * 1
+
+
+def test_lemmaP1_witness_58_77_refutes_larger_constants():
+    """Verifier's witness: X = {0 w.p. 19/20, 20 w.p. 1/20}, Y = {1/2 w.p. 76/77, 39 w.p. 1/77}; both mean 1, CV^2 =
+    19, (1+Delta) E min(X,Y) = 58/77 = 0.7532. So the best constant c* in E min >= c*/(1+Delta) lies in
+    [16/27, 58/77]; candidate constants 0.76 and 0.80 are false (computed directly, not via the checker)."""
+    X = dist((0, F(19, 20)), (20, F(1, 20)))
+    Y = dist((F(1, 2), F(76, 77)), (39, F(1, 77)))
+    assert mean(X) == mean(Y) == 1 and cv2(X) == cv2(Y) == 19
+    c = (1 + 19) * emin(X, Y)
+    assert c == F(58, 77) and F(16, 27) <= c < F(76, 100) < F(80, 100)
+    assert F(16, 27) / (1 + 19) <= emin(X, Y)  # the proved bound holds on the witness
 
 
 def test_thmP_index_policy_vs_clairvoyant_m1():

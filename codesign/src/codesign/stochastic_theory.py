@@ -562,6 +562,14 @@ class HNode:
     def l_plus(self):
         return self.rho + self.q + self.X
 
+    @property
+    def q0(self):
+        """Prompt tokens that no schedule can prefill before the node is available. Without pieces the q tokens
+        are released at availability, so q0 = q. With staggered fan-out pieces an unrestricted benchmark may
+        prefill pieces that returned early during the remaining wait (and the remaining q tokens before it), so
+        q0 = 0. Used by the preload-aware lower bound LB0 (verification fix for (L1))."""
+        return 0 if self.pieces else self.q
+
 
 @dataclass(frozen=True)
 class HTask:
@@ -616,15 +624,21 @@ def _h_arc_lag(T: HTask, lag, k):
 
 def h_cp(T: HTask, lag, cfg: HCfg, kind: str) -> F:
     """Critical path of one realization. kind='alg': node length alpha(q+rho) + a X (evict-always sizes);
-    kind='opt': alpha q + (a + c) X (the engine optimum's minimum per-node time; parent KV may be kept)."""
+    kind='opt': alpha q + (a + c) X (the minimum per-node time after availability of an engine that does not
+    prefill a node before it is available; parent KV may be kept); kind='opt0': alpha q0 + (a + c) X (valid for
+    every engine schedule, including ones that prefill returned fan-out pieces during the wait)."""
     fin = [F(0)] * len(T.nodes)
     for v, nd in enumerate(T.nodes):
         ins = [k for k, (_, x, _) in enumerate(T.arcs) if x == v]
         st = max([F(0)] + [fin[T.arcs[k][0]] + _h_arc_lag(T, lag, k) for k in ins])
         if kind == "alg":
             ln = cfg.alpha * (nd.q + nd.rho) + cfg.a * nd.X
-        else:
+        elif kind == "opt":
             ln = cfg.alpha * nd.q + (cfg.a + cfg.c) * nd.X
+        elif kind == "opt0":
+            ln = cfg.alpha * nd.q0 + (cfg.a + cfg.c) * nd.X
+        else:
+            raise ValueError(kind)
         fin[v] = st + ln
     return max(fin)
 
@@ -669,7 +683,8 @@ def sim_hybrid(tasks: Sequence[HTask], lag, cfg: HCfg, order=None, kicks: bool =
     (a paused partial prefill keeps its KV).  Decode machines: the top m admitted decode-phase nodes.  Held KV (a
     child's prefix: parent context and preloaded pieces) occupies only memory not reserved by admitted nodes and is
     evicted on demand (lowest class).  Preload chunks run on the server only when no admitted node is prefilling.
-    Returns dict with task completion times, recompute tokens, peak memory, kicks, held hits."""
+    Returns dict with task completion times, recompute tokens, peak memory, kicks, held hits, and the total
+    reservation kicked per admission event (kicked_res)."""
     import random as _r
     rng = _r.Random(cfg.seed)
     if order is None:
@@ -687,7 +702,7 @@ def sim_hybrid(tasks: Sequence[HTask], lag, cfg: HCfg, order=None, kicks: bool =
     admitted: list = []
     held: dict = {}  # child node -> held prefix tokens (F)
     held_t: dict = {}
-    stats = dict(recompute=F(0), kicks=0, held_hits=F(0), peak=F(0), preload_tokens=F(0))
+    stats = dict(recompute=F(0), kicks=0, held_hits=F(0), peak=F(0), preload_tokens=F(0), kicked_res=[])
     now = F(0)
 
     for t, T in enumerate(tasks):
@@ -741,13 +756,17 @@ def sim_hybrid(tasks: Sequence[HTask], lag, cfg: HCfg, order=None, kicks: bool =
                 new.append(n)
                 used += nd[n].l_plus
             new = sorted(new, key=key)
+        ev_res = 0
         for n in admitted:
             if n not in C and n not in new and kv_of(n) > 0:
                 stats["kicks"] += 1
+                ev_res += nd[n].l_plus
                 lost = kv_of(n)
                 stats["recompute"] += lost
                 pre_rem[n] = F(nd[n].q + nd[n].rho) + (nd[n].X - dec_rem[n])
                 pre_done[n] = F(0)
+        if ev_res:
+            stats["kicked_res"].append(ev_res)  # total reservation kicked by this admission event
         for n in new:
             if n not in first_adm:
                 first_adm.add(n)
@@ -864,24 +883,43 @@ def h_bound(tasks, lag, cfg: HCfg, order=None) -> list[F]:
             for t, T in enumerate(tasks)]
 
 
-def h_lower_bounds(tasks, cfg: HCfg):
+def h_lower_bounds(tasks, cfg: HCfg, preload_aware: bool = False):
     """(LB_cp, S(sigma + A/M)) for the engine optimum at speed 1 with memory M = M' - L_max (expected over lags).
-    OPT >= LB_cp and OPT >= S(sigma + A/M)/2 (concurrent open shop argument)."""
+    OPT >= LB_cp and OPT >= S(sigma + A/M)/2 (concurrent open shop argument). LB_cp (preload_aware=False) is a
+    lower bound only for the restricted benchmark that never prefills a node before it is available; with
+    preload_aware=True it is LB0 (node length alpha q0 + (a+c) X), valid for every engine schedule."""
+    kind = "opt0" if preload_aware else "opt"
     lbcp = F(0)
     for prob, lag in h_realizations(tasks):
-        lbcp += prob * sum(T.w * (T.r + h_cp(T, lag[t], cfg, "opt")) for t, T in enumerate(tasks))
+        lbcp += prob * sum(T.w * (T.r + h_cp(T, lag[t], cfg, kind)) for t, T in enumerate(tasks))
     _, S, A = h_sizes(tasks, cfg)
     return lbcp, smith([T.w for T in tasks], [s + a for s, a in zip(S, A)])
 
 
-def h_constants(tasks, cfg: HCfg):
-    """beta_cp, beta, theta of Theorem D."""
+def h_constants(tasks, cfg: HCfg, preload_aware: bool = False):
+    """beta_cp, beta, theta of Theorem D. With preload_aware=True, beta_cp is replaced by
+    beta_cp0 = max alpha (q + rho - q0) / (alpha q0 + a X), the node-wise constant against LB0."""
     Lmax = h_Lmax(tasks)
-    bcp = max(cfg.alpha * nd.rho / (cfg.alpha * nd.q + cfg.a * nd.X) for T in tasks for nd in T.nodes)
+    if preload_aware:
+        bcp = max(cfg.alpha * (nd.q + nd.rho - nd.q0) / (cfg.alpha * nd.q0 + cfg.a * nd.X)
+                  for T in tasks for nd in T.nodes)
+    else:
+        bcp = max(cfg.alpha * nd.rho / (cfg.alpha * nd.q + cfg.a * nd.X) for T in tasks for nd in T.nodes)
     kap = (lambda nd: cfg.alpha * (nd.l_plus + Lmax)) if cfg.Mp is not None else (lambda nd: F(0))
     b = max((cfg.alpha * nd.rho + kap(nd)) / (cfg.alpha * nd.q + cfg.c * nd.X) for T in tasks for nd in T.nodes)
     th = max(F(nd.l_plus, nd.l_minus) for T in tasks for nd in T.nodes) if cfg.Mp is not None else F(1)
     return bcp, b, th
+
+
+def thmD_constant(tasks, cfg: HCfg, preload_aware: bool = False) -> F:
+    """Theorem D constant. Restricted benchmark (no prefill before availability): (1 + beta_cp) + 2 max(1+beta,
+    theta). Unrestricted benchmark (verification fix of (L1)): min(1 + beta_cp0, 2 + beta) + 2 max(1+beta, theta);
+    the 2 + beta branch is the verifier's (CP' <= CP0 + sum alpha(q+rho) <= CP0 + (1+beta) sigma, sum w sigma <=
+    OPT), the 1 + beta_cp0 branch is node-wise (CP' <= (1 + beta_cp0) CP0).
+    With unbounded memory the second term is (1 + beta) (Smith(sigma) <= OPT, no open-shop factor 2)."""
+    bcp, b, th = h_constants(tasks, cfg, preload_aware)
+    first = min(1 + bcp, 2 + b) if preload_aware else 1 + bcp
+    return first + ((1 + b) if cfg.Mp is None else 2 * max(1 + b, th))
 
 
 def sim_discrete(tasks: Sequence[HTask], lag, cfg: HCfg, s: F = F(3), Pbar: int | None = None, order=None):

@@ -1,14 +1,14 @@
 # Stochastic theory, extensions (R2–R5 pushed further)
 
-This continues `docs/stochastic_theory.md` (frozen at commit e17bd7f; cited as **[base]**). Notation, models
-and benchmarks are as in [base] §1:
+This continues `docs/stochastic_theory.md` (cited as **[base]**; written against commit e17bd7f and revised
+together with this document after verification). Notation, models and benchmarks are as in [base] §1:
 
 - OPT_na: the optimal non-anticipatory policy at speed 1 (memory M where relevant).
 - OPT_clair: the clairvoyant optimum, with OPT_clair ≤ OPT_na.
 - Δ: a squared coefficient of variation.
 
 Code: `src/codesign/stochastic_theory_ext.py`. Machine checks: `tests/test_stochastic_theory_ext.py`,
-cited as **[X: name]** (without the `test_` prefix). There are 20 tests, about 17 s in total. All arithmetic is
+cited as **[X: name]** (without the `test_` prefix). There are 22 tests, about 18 s in total. All arithmetic is
 exact (Fractions); Z3 is used for algebra.
 
 Two pieces of background are taken from memory and were **not re-read in this session**:
@@ -22,6 +22,26 @@ Two pieces of background are taken from memory and were **not re-read in this se
 
 We re-verified both facts exactly on small instances.
 
+## Verification status
+
+An independent verifier audited this document at commit eaa6958 (`docs/stochastic_theory_ext_verification.md`,
+code `src/codesign/stochastic_ext_verify.py`). This revision applies the fixes.
+
+| Result | Verifier's verdict | Status in this revision |
+|---|---|---|
+| Lemma G2, Gittins single-machine optimality | VERIFIED | unchanged |
+| Thm G (≤ 2·OPT_na, chains, lags) | VERIFIED WITH FIX: "any law" not proved | **fixed** (§0, §1, §2): discrete finite-support laws, independent across nodes and tasks (the Megow–Vredeveld assumption). m = 2 test tightened |
+| Lemma P1 | VERIFIED; side finding c\* ≤ 58/77 | **fixed** (§3): witness 58/77 added as its own test; second branch needs Δ < 2 |
+| Lemma P2, Thm P | VERIFIED (wording fixes) | **fixed** (§3): Δ < 2 branch; "loses 1+Δ" is a limit; "within a factor ≤ 43/16"; Δ_W ≤ max node CV² for correlated nodes |
+| Thm H | VERIFIED WITH FIX (inherits [base] (L1)) | **fixed** (§4): as stated for prompts without staggered pieces, or against the restricted benchmark; otherwise β_cp⁰ and LB⁰ (2.52 → 2.54, 2.67 → 2.74) |
+| Thm DR | VERIFIED WITH FIX (same scope) | **fixed** (§5): 8.68 → 8.74 unrestricted |
+| Prop K | VERIFIED (same caveat) | **fixed** (§6): 5.80 → 5.82 unrestricted |
+| κ lower bound | VERIFIED; general family found | family added ([base] §4.3, `test_lemmaD0_charge_tight_family`) |
+| √2 instance | VERIFIED (supremum, never attained) | kept as a **remark** only (§7) |
+| "√2 improves 4/3", "gap √2 vs 2", "Thm A tightness open" | **FALSE**: 2 is known to be tight (Schulz–Skutella; Megow–Schulz Lemma 2.2) | **fixed** (§0, §7, §8, §9): Thm A is tight |
+| Calibrated constants | VERIFIED | unchanged; preload-aware values added ([X: preload_aware_constants_H_DR_K]) |
+| Tests | three weak spots | **fixed**: [X: lemmaP1_witness_58_77_refutes_larger_constants]; β_cp instance in [X: thmH_ratio_domination_and_gittins_optimality]; 1/m instance in [X: thmG_parallel_machines_consistency] |
+
 ---
 
 ## 0. New results at a glance
@@ -30,31 +50,31 @@ We re-verified both facts exactly on small instances.
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
-| **Thm G** | Gittins-quanta policy. Pathwise C_J ≤ r_J + CP_J + (1/m)Σ_{K≠J} V_KJ. E[ALG] ≤ LB_cp + Gitt₁/m − (1/m)Σ w E W ≤ **2·OPT_na** | **proved** (extends a known result) | **chain** tasks (LLM nodes in sequence; tool fan-outs as lags); random sizes with **any** law; random lags independent of sizes; release dates; online; m machines; speed 1; **preemptive** benchmark | 2, no Δ. Worst checked 1.044 (m = 1, exact OPT_na) | [X: gittins_index_exact_and_quanta_strictly_decreasing], [X: gittins_single_machine_is_optimal_and_beats_wsept], [X: thmG_pathwise_bound_every_realization], [X: thmG_pathwise_mutations_fail], [X: thmG_two_approx_vs_exact_preemptive_optimum_m1], [X: thmG_parallel_machines_consistency], [X: thmG_hypotheses_are_necessary] |
-| **Thm P** | Index policy P-WSPT-DAG (w/E[W]). E[ALG] ≤ (1 + ρ(Δ_W))·OPT_clair ≤ (1 + ρ(Δ_W))·OPT_na | **proved** | **general DAGs**; random sizes (only the task totals W_J need be independent across tasks); lags; releases; online; m machines | ρ(Δ) ≤ min{(27/16)(1+Δ), 1/(1−√(Δ/2))}, with ρ(0) = 1, which recovers Thm A. Index policies must lose ≥ 1+Δ | [X: lemmaP1_emin_lower_bound_and_witness], [X: thmP_index_policy_vs_clairvoyant_m1], [X: thmP_parallel_machines_and_delta_dependence] |
+| **Thm G** | Gittins-quanta policy. Pathwise C_J ≤ r_J + CP_J + (1/m)Σ_{K≠J} V_KJ. E[ALG] ≤ LB_cp + Gitt₁/m − (1/m)Σ w E W ≤ **2·OPT_na** | **proved** (extends a known result) | **chain** tasks (LLM nodes in sequence; tool fan-outs as lags, valid in the machine model); random sizes with **discrete finite-support** laws, independent across nodes and tasks; random lags independent of sizes; release dates; online; m machines; speed 1; **preemptive** benchmark | 2, no Δ. Worst checked 1.044 (m = 1, exact OPT_na) | [X: gittins_index_exact_and_quanta_strictly_decreasing], [X: gittins_single_machine_is_optimal_and_beats_wsept], [X: thmG_pathwise_bound_every_realization], [X: thmG_pathwise_mutations_fail], [X: thmG_two_approx_vs_exact_preemptive_optimum_m1], [X: thmG_parallel_machines_consistency], [X: thmG_hypotheses_are_necessary] |
+| **Thm P** | Index policy P-WSPT-DAG (w/E[W]). E[ALG] ≤ (1 + ρ(Δ_W))·OPT_clair ≤ (1 + ρ(Δ_W))·OPT_na | **proved** | **general DAGs**; random sizes (only the task totals W_J need be independent across tasks); lags; releases; online; m machines | ρ(Δ) ≤ min{(27/16)(1+Δ), 1/(1−√(Δ/2))} (second branch only for Δ < 2), with ρ(0) = 1, which recovers Thm A. Index policies have ratios approaching 1+Δ (a supremum over instances), so the bounds are within a factor ≤ 43/16 | [X: lemmaP1_emin_lower_bound_and_witness], [X: lemmaP1_witness_58_77_refutes_larger_constants], [X: thmP_index_policy_vs_clairvoyant_m1], [X: thmP_parallel_machines_and_delta_dependence] |
 
 **R3 (engine)**
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
-| **Thm H** | Engine with **random output lengths**, Gittins-quanta policy. E[ALG] ≤ (1+β_cp)·LB_cp + Gitt₁(Z′) − Σ w E Z′ ≤ (1 + β_cp + λ)·OPT_na | **proved (restricted)** | memory **unbounded** (or never binding); chain tasks; X any law, revealed token by token; fluid engine **speed 3** (R0a); evict-always | 1 + β_cp + λ, Δ-free. **2.67** at calibrated values with random X (2.52 with deterministic X, vs 2.78 for [base] Thm D) | [X: thmH_pathwise_bound_hybrid_random_outputs], [X: thmH_pathwise_mutation_s_process_fails], [X: thmH_ratio_domination_and_gittins_optimality], [X: thmH_fixed_priority_mutation_fails], [X: thmH_calibrated_constant] |
-| **Thm DR** | [base] Thm D with **random outputs and bounded KV memory**: reserve ℓ⁻ + X̄ (support cap) and use index w/E[Z′]. E[ALG] ≤ [(1+β_cp) + 2λ_E·ρ(Δ_s)]·OPT_clair | **proved (restricted)** | bounded support X ≤ X̄; memory M′ = M + L̄_max; speed 3; benchmark is the **clairvoyant** engine optimum (stronger than OPT_na) | **8.68** at calibrated values with variable X (Δ_s = 0.30); 5.80 with deterministic X | [X: thmDR_random_outputs_with_cap_reservation], [X: thmDR_calibrated_constant] |
+| **Thm H** | Engine with **random output lengths**, Gittins-quanta policy. E[ALG] ≤ (1+β_cp)·LB_cp + Gitt₁(Z′) − Σ w E Z′ ≤ (1 + β_cp + λ)·OPT_na | **proved (restricted)** | memory **unbounded** (or never binding); chain tasks; X with finite support, revealed token by token; fluid engine **speed 3** (R0a); evict-always; benchmark restricted as in [base] (no prefill before availability) **or** prompts without staggered pieces; else β_cp → β_cp⁰ | 1 + β_cp + λ, Δ-free. **2.67** at calibrated values with random X (2.52 with deterministic X, vs 2.78 for [base] Thm D). Unrestricted, fan-out final prompt: 2.74 (2.54) | [X: thmH_pathwise_bound_hybrid_random_outputs], [X: thmH_pathwise_mutation_s_process_fails], [X: thmH_ratio_domination_and_gittins_optimality], [X: thmH_fixed_priority_mutation_fails], [X: thmH_calibrated_constant], [X: preload_aware_constants_H_DR_K] |
+| **Thm DR** | [base] Thm D with **random outputs and bounded KV memory**: reserve ℓ⁻ + X̄ (support cap) and use index w/E[Z′]. E[ALG] ≤ [(1+β_cp) + 2λ_E·ρ(Δ_s)]·OPT_clair | **proved (restricted)** | bounded support X ≤ X̄; memory M′ = M + L̄_max; speed 3; benchmark is the **clairvoyant** engine optimum (stronger than OPT_na), restricted as in [base] (L1), else β_cp → β_cp⁰ | **8.68** at calibrated values with variable X (Δ_s = 0.30); 5.80 with deterministic X. Unrestricted: 8.74 | [X: thmDR_random_outputs_with_cap_reservation], [X: thmDR_calibrated_constant], [X: preload_aware_constants_H_DR_K] |
 
 **κ term (R3) and Thm A**
 
 | Item | Statement (short) | Status | Restriction | Constant | Machine check |
 |---|---|---|---|---|---|
-| **Prop K** | Sharper [base] Thm D constant: (1+β_cp) + 2λ_D, with λ_D = max_K Z′_K/(σ_K + A_K/M) ≤ max(1+β, θ) | **proved**, tight for one task | as [base] Thm D | **5.80** at calibrated values (was 9.99); 4.82 at M′ = 32k; 6.75 at 128k | [X: propK_sharpened_thmD_constant] |
-| **κ lower bound** | Under priority-prefix admission, one 2-token arrival can force recompute of a whole L_max context. Lemma D0's per-event charge ℓ⁺_y + L_max cannot be reduced without changing the admission rule | **proved** (exact instance) | — | — | [X: D0_kick_charge_is_tight_per_event] |
-| **Thm A lower bound** | P-WSPT-DAG ratio ≥ **√2** (improves 4/3) | **proved** (exact; OPT confirmed by DP on small sizes) | deterministic, m = 1, no lags needed | → √2 ≈ 1.4142 | [X: thmA_lower_bound_sqrt2] |
+| **Prop K** | Sharper [base] Thm D constant: (1+β_cp) + 2λ_D, with λ_D = max_K Z′_K/(σ_K + A_K/M) ≤ max(1+β, θ) | **proved**, tight for one task | as [base] Thm D (restricted benchmark; unrestricted: min(1+β_cp⁰, 2+β) in place of 1+β_cp) | **5.80** at calibrated values (was 9.99); 4.82 at M′ = 32k; 6.75 at 128k. Unrestricted: 5.82 (was 10.01) | [X: propK_sharpened_thmD_constant], [X: preload_aware_constants_H_DR_K] |
+| **κ lower bound** | Under priority-prefix admission, one 2-token arrival can force recompute of a whole L_max context. Lemma D0's per-event charge ℓ⁺_y + L_max cannot be reduced without changing the admission rule. The verifier's family makes it tight up to an additive 1 for every ℓ⁺_y | **proved** (exact instances) | — | — | [X: D0_kick_charge_is_tight_per_event], [base: lemmaD0_charge_tight_family] |
+| **Thm A lower bound** | Thm A's 2 is **tight**, by a known family (Schulz–Skutella; Megow–Schulz Lemma 2.2). Our √2 family is a remark only | known | deterministic, m = 1, unit weights, no lags | 2 (known); our family → √2 | [base: thmA_constant_two_is_tight_schulz_skutella], [X: thmA_lower_bound_sqrt2] |
 
 **Still open** (§8):
 - Gittins with **bounded memory**. The obstacle is that priority drops reorder the admitted prefix, which causes
   kicks at quantum boundaries.
 - Gittins for **DAG** tasks with parallel LLM nodes.
 - Quantile reservation with overflow.
-- The exact pair constant: the worst case lies in [1.28, 1.69]·(1+Δ) (lower end witnessed at Δ = 81/40).
-- Thm A: the gap √2 … 2.
+- The exact pair constant: the worst case lies in [77/58, 27/16]·(1+Δ) ≈ [1.33, 1.69]·(1+Δ) (lower end witnessed at
+  Δ = 19, the verifier's 58/77 witness).
 - The multiplicative form of R0b.
 
 ---
@@ -64,8 +84,8 @@ We re-verified both facts exactly on small instances.
 **Work process.** A chain task J is a sequence of nodes. Node i is:
 - a deterministic **lump** of work. It may depend on the previous node's realized length, e.g. a context
   recompute α(q + ρ + X_parent);
-- followed by N_i **units**, each of work u_i. N_i ≥ 1 is random, independent across nodes and tasks, and revealed
-  unit by unit: at each unit boundary we learn whether the node ends.
+- followed by N_i **units**, each of work u_i. N_i ≥ 1 is random with a **finite support**, independent across
+  nodes and tasks, and revealed unit by unit: at each unit boundary we learn whether the node ends.
 
 The state is (node, units done, previous length). The process is Markov and its state space is finite.
 
@@ -127,20 +147,27 @@ of J's realized lags.
    has key < k ≤ key(J's last quantum), since keys of J's quanta increase. That work belongs to quanta counted in
    V_·J, and each unit of work is counted once. So the total of such instants is ≤ (1/m)Σ V_KJ. ∎
 
-**Theorem G.** For chain tasks with random sizes (any laws), random lags independent of sizes, release dates,
-online arrival and m machines:
+**Theorem G.** For chain tasks with random sizes that have discrete laws with finite support, independent across
+nodes and tasks (the Megow–Vredeveld setting), random lags independent of sizes, release dates, online arrival
+and m machines:
 
   E[ALG] ≤ LB_cp + Gitt₁/m − (1/m)Σ_J w_J E[W_J] ≤ 2·OPT_na.
 
 *Proof.* Take expectations in G3. By G2, Σ_J w_J Σ_{K≠J} V_KJ = Σ_J w_J (C¹_J − W_J). Then use LB_cp ≤ OPT_na and
 G1. ∎
 
+The earlier version said "any laws". The quanta, Lemma G2 and Gittins optimality are used here only for
+finite-state Markov work processes. Megow–Vredeveld also assume discrete laws. Continuous or unbounded laws would
+need a limit argument that is not given, so they are **not** claimed.
+
 **Checks.**
 - [X: thmG_pathwise_bound_every_realization]: G3 on more than 1500 (task, realization) pairs; m ∈ {1,2,3};
   chains of 1–3 nodes with random lags and releases.
 - [X: thmG_two_approx_vs_exact_preemptive_optimum_m1]: 60 instances against the **exact** preemptive OPT_na (DP,
   m = 1). Worst ratio 1.044.
-- [X: thmG_parallel_machines_consistency]: m = 2.
+- [X: thmG_parallel_machines_consistency]: m = 2. It includes four unit jobs where ALG = 6 ≤ 4 + (10−4)/2. A
+  halved interference term, 4 + (10−4)/4, fails there, so the 1/m factor is exercised (the verifier's weak spot
+  (c)).
 
 **Mutations** [X: thmG_pathwise_mutations_fail], [X: thmG_hypotheses_are_necessary]:
 1. Using J's *first* quantum key instead of its last breaks G3.
@@ -150,7 +177,9 @@ G1. ∎
 4. Speed 1 instead of m in G1 fails.
 
 **Scope.** Chains cover ReAct loops (LLM → tool → LLM → …) and our plan → {tools} → final workload, since a tool
-fan-out collapses to one lag ([base] §1.1). DAGs whose LLM nodes run **in parallel** (multiple sub-agents) are
+fan-out collapses to one lag in the **machine** model ([base] §1.1). The collapse is not valid for the engine's
+lower bound, where a fan-out's outputs are prompt pieces that can be prefilled before the node is available
+([base] §4.1). That matters for Thm H, DR and Prop K (§4–§6), not for Thm G. DAGs whose LLM nodes run **in parallel** (multiple sub-agents) are
 **open**: the single-machine relaxation then processes a non-sequential job, and the Gittins theorem no longer
 applies.
 
@@ -163,6 +192,9 @@ This settles R2/R4 against OPT_na for the agent workload with constant 2 and no 
 **Lemma P1.** Let X, Y ≥ 0 be independent with E X = E Y = 1 and CV² ≤ Δ. Then
 
   E[min(X, Y)] ≥ max{ 16/(27(1+Δ)), 1 − √(Δ/2) }.
+
+The second bound is informative only for Δ < 2. For Δ ≥ 2 it is ≤ 0, and the corresponding branch of ρ below is
+read as ∞.
 
 *Proof.*
 - **First bound.**
@@ -180,7 +212,14 @@ right constant. That guess is **false**. Exact witness:
 - Y ∈ {11/20 w.p. 10/11, 11/2 w.p. 1/11};
 - Δ = 81/40, and (1+Δ)·E min = 187/240 ≈ 0.779.
 
-So the best constant c* in E min ≥ c*/(1+Δ) lies in [16/27, 0.78]. Local search found 0.776.
+A sharper witness is due to the verifier ([X: lemmaP1_witness_58_77_refutes_larger_constants]):
+- X ∈ {0 w.p. 19/20, 20 w.p. 1/20};
+- Y ∈ {1/2 w.p. 76/77, 39 w.p. 1/77};
+- both have mean 1 and CV² = 19, and (1+Δ)·E min = **58/77 ≈ 0.7532**.
+
+So the best constant c\* in E min ≥ c\*/(1+Δ) lies in **[16/27, 58/77] ≈ [0.593, 0.753]**. Our earlier local
+search (0.776) had not found this. The test computes the witness directly, so false constants such as 0.76 or 0.80
+fail it. The verifier noted that the random-law check alone passes with them.
 
 **Lemma P2 (pairwise reduction).** On one machine with independent task totals W_J:
 
@@ -201,7 +240,12 @@ tasks. Then
 
   E[ALG] ≤ LB_cp + (1/m)Smith(E W) ≤ LB_cp + ρ(Δ_W)·E[(1/m)Smith(W(ω))] ≤ (1 + ρ(Δ_W))·OPT_clair ≤ (1 + ρ(Δ_W))·OPT_na,
 
-where ρ(Δ) ≤ min{(27/16)(1+Δ), 1/(1−√(Δ/2))} and Δ_W = max_J CV²(W_J) ≤ the maximum node CV².
+where ρ(Δ) ≤ min{(27/16)(1+Δ), 1/(1−√(Δ/2))} (the second term only for Δ < 2) and Δ_W = max_J CV²(W_J) ≤ the
+maximum node CV².
+
+**Δ_W ≤ max node CV², even for correlated nodes.** By Minkowski, sd(Σ_x p_x) ≤ Σ_x sd(p_x) ≤ √Δ·Σ_x E p_x, so
+CV²(W_J) ≤ Δ without any independence between the nodes of one task (verifier, Z3 and exact checks). Only the task
+totals need to be independent across tasks.
 
 *Proof.*
 1. [base] Lemma A1 in expectation. The ranking is fixed, so E Σ_{K⪯J} W_K = Σ E W_K.
@@ -212,8 +256,11 @@ where ρ(Δ) ≤ min{(27/16)(1+Δ), 1/(1−√(Δ/2))} and Δ_W = max_J CV²(W_J
 - At Δ = 0, ρ = 1, which recovers Thm A's ratio of 2.
 - The benchmark is the *clairvoyant* optimum, so this is stronger than [base] Thm B, which is only against
   OPT_np. It also holds for **general DAGs**, where Theorem G does not.
-- **Necessity:** every fixed-priority policy loses 1+Δ against OPT_na ([base] R7.5: (n+1)/(nq+2−q) → 1+Δ). So
-  linear dependence on Δ is unavoidable for index policies, and Theorem P is tight up to the constant 27/16 (+1).
+- **Necessity:** the ratio of every fixed-priority policy approaches 1+Δ against OPT_na on the family of
+  [base] R7.5: (n+1)/(nq+2−q) → 1+Δ as n → ∞, and (n+1)/(nq+2−q) ≤ 1+Δ for each n. This is a supremum over
+  instances, not a loss on every instance. On this family the clairvoyant optimum equals probing, so the same
+  holds against OPT_clair. So linear dependence on Δ is unavoidable for index policies. The upper bound
+  1 + (27/16)(1+Δ) and the lower bound 1+Δ differ by a factor of at most 27/16 + 1/(1+Δ) ≤ 43/16.
 
 **Checks.**
 - [X: thmP_index_policy_vs_clairvoyant_m1]: exact clairvoyant DP, with chains and DAGs.
@@ -229,7 +276,8 @@ hybrid model. Memory is unbounded, or large enough never to bind.
 **Node and task assumptions.**
 - Node y has q new prompt tokens and ρ_y recomputed context tokens. ρ_y may include the parent's realized output
   (`ctx`).
-- The output length X_y has any law (support ≥ 1), independent across nodes, and is revealed token by token (EOS).
+- The output length X_y has a discrete law with finite support in {1, 2, ...}, independent across nodes, and is
+  revealed token by token (EOS).
 - Tasks are chains; lags are independent of X.
 
 **Two work processes per task.**
@@ -271,6 +319,18 @@ Both charge only quanta of keys < key(J's last). ∎
 
 with the policy run on the fluid engine at speed 3 and evict-always. **No Δ appears.**
 
+**Scope ([base] (L1) fix).** The step LB_cp ≤ OPT_na uses [base] (L1). That holds when no node's prompt is a
+staggered fan-out, which is the case in the model of this section (each node's q tokens arrive at its
+availability), or when the benchmark does not prefill a node before it is available. If a node's prompt is a
+fan-out whose pieces return at different times and the benchmark may prefill returned pieces early, replace LB_cp
+by LB⁰ (q⁰ = 0 for such nodes) and β_cp by β_cp⁰ = max α(q + ρ − q⁰)/(αq⁰ + aX_min):
+
+  E[ALG] ≤ (1+β_cp⁰)·LB⁰ + Gitt₁(Z′) − Σ w E Z′ ≤ (1 + β_cp⁰ + λ)·OPT_na.
+
+H1, H2 and H3 are unaffected (H1's simulation also covers early piece prefill, since pieces exist only after the
+parent finishes). [X: preload_aware_constants_H_DR_K] checks this inequality exactly on 30 random instances with
+fan-out final nodes.
+
 **Checks.**
 - [X: thmH_pathwise_bound_hybrid_random_outputs]: H2 on more than 1500 checks.
 - [X: thmH_ratio_domination_and_gittins_optimality]: Gitt₁ equals the exact single-machine DP for both the Z′ and
@@ -287,10 +347,10 @@ with the policy run on the fluid engine at speed 3 and evict-always. **No Δ app
 **Calibrated constants** [X: thmH_calibrated_constant]: a = 0.027767, c = a/51, α = 1.14·10⁻⁴. The task has a plan
 node with q = 2000 and a final node with q = 1500, ρ = 2200.
 
-| Output lengths | β_cp | λ | Ratio |
-|---|---|---|---|
-| deterministic X (200, 300) | 0.030 | 1.494 | **2.52** |
-| random X ∈ {50, 200, 200, 800}, {100, 300, 300, 1200} | 0.085 | 1.588 | **2.67** |
+| Output lengths | β_cp | λ | Ratio | β_cp⁰ (final prompt a fan-out) | Ratio, unrestricted |
+|---|---|---|---|---|---|
+| deterministic X (200, 300) | 0.030 | 1.494 | **2.52** | 0.051 | 2.54 |
+| random X ∈ {50, 200, 200, 800}, {100, 300, 300, 1200} | 0.085 | 1.588 | **2.67** | 0.152 | 2.74 |
 
 [base] Thm D gives 2.78 here for deterministic X, so the cumulative domination is also tighter in the
 deterministic case.
@@ -325,6 +385,10 @@ the realized X.
 CV²(X) ≈ 0.85, because the prompts are deterministic. The result is λ_E = 2.33, ρ ≤ 1.63, ratio **8.68**. With
 deterministic X it is 5.80 (= Prop K).
 
+**Scope ([base] (L1) fix).** As for Thm H: the ratio is against the restricted benchmark, or for prompts without
+staggered pieces. Against the unrestricted clairvoyant benchmark, 1+β_cp becomes min(1+β_cp⁰, 2+β), giving
+8.6755 − 0.0851 + 0.1519 = **8.74** at the calibrated values ([X: preload_aware_constants_H_DR_K]).
+
 Restriction: X needs a bounded support cap X̄ that is reserved. **Quantile reservation with overflow is open.**
 Doubling reservations work for the area term, but each growth event can kick up to L_max, which costs an α·L_max
 per doubling.
@@ -341,11 +405,14 @@ equality, so no smaller constant works for this step. ∎
 equality for one task, and the calibrated values. The improvement comes from not maximizing the κ part and the
 area part separately: κ ≈ α·8000 ≈ 0.91 s is comparable to the area term aXℓ⁺/M ≈ 0.56 s.
 
-| M′ | Old constant | New constant |
-|---|---|---|
-| 32k | — | 4.82 |
-| **64k** | 9.99 | **5.80** |
-| 128k | — | 6.75 |
+| M′ | Old constant | New constant | New, unrestricted benchmark |
+|---|---|---|---|
+| 32k | — | 4.82 | 4.84 |
+| **64k** | 9.99 | **5.80** | 5.82 (old: 10.01) |
+| 128k | — | 6.75 | 6.78 |
+
+The unrestricted column replaces 1+β_cp by min(1+β_cp⁰, 2+β) ([base] §4.5), with the final prompt treated as a
+fan-out ([X: preload_aware_constants_H_DR_K]).
 
 λ_D grows with M′, because κ is fixed while A/M shrinks. When memory never binds, use the unbounded-memory
 constants instead: Thm H gives 2.52.
@@ -360,10 +427,17 @@ constants instead: Thm H gives 2.52.
 
 **Lower bound for this admission rule** [X: D0_kick_charge_is_tight_per_event]. One 2-token, high-priority arrival
 late in a 10-token decode (M′ = 11) kicks the whole L_max context and forces 9.49 recompute tokens. So the
-per-event charge ℓ⁺_y + L_max is tight up to O(1) under priority-prefix admission. Shrinking κ further needs a
+per-event charge ℓ⁺_y + L_max is tight up to O(1) under priority-prefix admission. The verifier's family ([base]
+§4.3) is sharper: the kicked reservation is exactly ℓ⁺_y + L_max − 1 for every ℓ⁺_y. Shrinking κ further needs a
 different rule, e.g. swap-out (P5) instead of recompute, which turns κ into a delay. That route is **open**.
 
-## 7. Theorem A lower bound: √2
+## 7. Remark: a √2 family for P-WSPT (superseded)
+
+**Thm A's 2 is tight, and this is known.** Megow–Schulz (ORL 2004, Lemma 2.2), building on Schulz–Skutella
+(J. Sched. 2002), give a one-machine, unit-weight family without lags on which P-WSPT's ratio tends to 2. On
+single-node tasks without lags, P-WSPT-DAG is P-WSPT. [base] §2.4 reproduces the family exactly (228/160 at n = 3;
+1.9846 at n = 150). The earlier version of this section said that √2 "improves 4/3" and that "the gap is now √2
+vs 2". That was false: the verifier found the known bound. The family below is kept only as a remark.
 
 **Instance** [X: thmA_lower_bound_sqrt2]: one machine, deterministic, no lags.
 - Job A has p = w = L (ratio 1) and is released at 0.
@@ -373,11 +447,9 @@ P-WSPT preempts A for all k jobs:
 - ALG = (1+ε)Σ_{i≤k}(L−1+i) + L(L+k);
 - "A first" = L² + (1+ε)Σ_{i≤k}(L+i), and for small sizes the exact DP confirms this is OPT.
 
-At k ≈ √2·L the ratio is (1+2x+x²/2)/(1+x+x²/2) at x = √2, which equals **√2**. The exact value at L = 1000,
-k = 1414 is 1.4137. The mutation k = 0 gives ratio 1.
-
-This improves [base]'s lag trap (4/3) and needs no lags. The gap is now **√2 vs 2**. We did not check whether
-Megow–Schulz already state a matching lower bound for P-WSPT. If they do, this instance is known.
+At k ≈ √2·L the ratio tends to (1+2x+x²/2)/(1+x+x²/2) at x = √2, which equals √2. The supremum is not attained
+(verifier, Z3). The exact value at L = 1000, k = 1414 is 1.4137. The mutation k = 0 gives ratio 1. It is weaker
+than the known 2.
 
 ## 8. Open problems and the most promising routes
 
@@ -387,8 +459,8 @@ Megow–Schulz already state a matching lower bound for P-WSPT. If they do, this
    of 2 of the Gittins index), with kicks charged per class change.
 2. **Gittins for DAG tasks with parallel LLM nodes.** Theorem P covers DAGs with a Δ-dependent constant.
 3. **Quantile reservation with overflow** (Thm DR without a support cap).
-4. **The exact pair constant c\*** ∈ [16/27, 0.78].
-5. **Thm A tightness** (√2 vs 2) and **R0b multiplicative**: not attempted further.
+4. **The exact pair constant c\*** ∈ [16/27, 58/77].
+5. **R0b multiplicative**: not attempted further. (Thm A tightness is settled: 2, known; §7.)
 
 ## 9. Novelty (honest)
 
@@ -396,10 +468,12 @@ Megow–Schulz already state a matching lower bound for P-WSPT. If they do, this
   extension is short; the content is the observation that lags enter only the critical path. This is the first
   O(1) result here against the **preemptive** non-anticipatory optimum with random sizes.
 - **Theorem P.** The pairwise reduction is classical in style. The E min lemma, its constant 16/27 and the
-  disproof of 1/(1+Δ) appear new to us but are elementary. The consequence — an index policy within
-  1 + O(1+Δ) of the **clairvoyant** optimum for DAGs with lags, tight in Δ — we did not find stated.
+  disproof of 1/(1+Δ) appear new to us but are elementary. The sharper witness 58/77 is the verifier's. The
+  consequence — an index policy within 1 + O(1+Δ) of the **clairvoyant** optimum for DAGs with lags, linear in
+  Δ, and within a factor ≤ 43/16 of the 1+Δ lower bound — we did not find stated.
 - **Theorem H.** New composition. It is a Gittins analysis on engine work processes with a cumulative-domination
   lemma (H3). The engine lower bound (H1) is a direct simulation argument.
 - **Theorem DR, Prop K.** Direct sharpenings of [base] Thm D. Prop K is a bookkeeping improvement, but it nearly
   halves the calibrated constant.
-- **√2.** Likely known for P-WSPT (see §7).
+- **√2.** Not a contribution. Thm A's 2 is already known to be tight (Schulz–Skutella; Megow–Schulz Lemma 2.2; §7).
+- **(L1) scope fix and the unrestricted constants** (2.54/2.74, 8.74, 5.82) follow the verifiers' findings.
