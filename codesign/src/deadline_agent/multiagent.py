@@ -31,6 +31,18 @@ from .model_client import messages_tokens
 from .prompts import FINAL_SCHEMA, evidence_log_messages, parse_final, parse_plan, plan_messages, plan_schema, raw_block
 from .tools import DelayModel, SearchTool, normalize_query
 
+REACT_STEP_TOKENS = 48
+REACT_SYSTEM = ("You are a research agent. Each turn, write one short line: the next search query to run. "
+                "Tool: search(query) returns passages.")
+
+
+def react_messages(question: str, log: str, final: bool = False) -> list[dict[str, str]]:
+    """Append-only: for later turns the user content extends the earlier one, so prefixes are reused."""
+    tail = ("\nNow answer. Return JSON {\"answer\": ...} with a short span." if final else "\nNext query:")
+    return [{"role": "system", "content": REACT_SYSTEM},
+            {"role": "user", "content": f"Question: {question}\n\n{log}" + tail}]
+
+
 WORKER_SCHEMA = {"type": "object", "properties": {"report": {"type": "string"}}, "required": ["report"]}
 
 
@@ -216,7 +228,13 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
             kind = phase if phase in ("plan", "final") else "other"
             ctrl.yield_for(key, messages_tokens(backend, msgs))
             return await ctrl.generate(backend, key, kind, msgs, max_tokens, phase or stage, schema, {"priority": prio})
-        return await backend.generate(msgs, max_tokens, phase or stage, schema, {"priority": prio})
+        extra = {"priority": prio}
+        if hasattr(layer, "request_extra"):  # codesign.client.CodesignLayer: priority rule + vllm_xargs
+            extra = layer.request_extra(at, stage, phase or stage, msgs, max_tokens, backend)
+        g = await backend.generate(msgs, max_tokens, phase or stage, schema, extra)
+        if hasattr(layer, "on_done"):
+            layer.on_done(at, g)
+        return g
 
     tool = SearchTool(at.task_id, list(at.task.passages), delay, seed, top_k=top_k, result_token_cap=result_cap,
                       inline=inline_tools)
@@ -226,6 +244,31 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
     pre_tasks: list[asyncio.Task] = []  # every preload / pin of the controller mode
     try:
         async with asyncio.timeout_at(at.deadline):
+            if at.shape == "react":
+                # multi-turn ReAct-style loop: each turn's prompt extends the previous one (append-only user
+                # content), so the previous turn's KV is the next turn's prefix across the tool wait (Continuum's
+                # setting). Turn t: model step (thought / next query) -> search -> result appended.
+                log, last_q = "", at.task.question
+                for t in range(at.width):
+                    g = await llm("step", react_messages(at.task.question, log), REACT_STEP_TOKENS, None, "step")
+                    q = (g.text.strip().splitlines() or [""])[0][:200] or at.task.question
+                    log += f"Thought {t + 1}: {g.text.strip()}\n"
+                    r = await tool.run(f"c{t + 1}", t, q if q != last_q else f"{q} {t}")
+                    if r.error:
+                        raise RuntimeError(r.error)
+                    last_q = q
+                    log += raw_block(r.call_id, q, r.text) + "\n\n"
+                t_last = now()
+                g = gfin = await llm("final", react_messages(at.task.question, log, final=True), final_max_tokens,
+                                     FINAL_SCHEMA, "final")
+                try:
+                    answer = parse_final(g.text)
+                except ValueError:
+                    answer = ""
+                end = now()
+                status = "ontime"
+                return TaskResult(at.task_id, at.shape, at.arrival, at.deadline, status, end, answer, calls, t_last,
+                                  gfin.submit_t, gfin.first_token_t, gfin.prompt_tokens, gfin.cached_tokens, n_pre)
             g = await llm("plan", plan_messages(at.task.question, at.width), 128, plan_schema(at.width), "plan")
             try:
                 qs = parse_plan(g.text)
@@ -362,7 +405,12 @@ def make_workload(tasks: list[Task], rate: float, duration: float, seed: int, sh
             break
         shape = shapes[rng.randrange(len(shapes))]
         base = tasks[rng.randrange(len(tasks))]
-        out.append(AgentTask(f"{base.task_id}#{i}", base, t, t + rng.uniform(*slack) * isolated[shape], shape, width))
+        w = width
+        if isinstance(width, dict):  # e.g. {"fanout": [2, 4, 8], "react": [2, 4, 6]}: drawn per task
+            choices = width[shape]
+            w = choices[rng.randrange(len(choices))]
+        out.append(AgentTask(f"{base.task_id}#{i}", base, t, t + rng.uniform(*slack) * isolated.get(shape, 15.0),
+                             shape, w))
         i += 1
     return out
 
