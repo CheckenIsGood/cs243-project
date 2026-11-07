@@ -630,12 +630,12 @@ with an independent check). On novelty alone we are in the same band.
    - The σ\* threshold should be labelled approximate.
    - The controller result (§6.10) can now go in as a measured result.
    - Cite CacheScout and Sutradhara.
-2. **Finish seed 4** of the controller test, and stop pod `9wtqy16fleq44n`.
+2. ~~Finish seed 4 of the controller test, and stop pod `9wtqy16fleq44n`.~~ Done (§6.10); the pod is stopped.
 3. **Pins-off ablation** of the controller at 50k/40k, the likely cause of the seed-2 50k loss. Add a 65k cap to
    locate the crossover.
 4. **Fix plan truncation** (plan max_tokens 128) before the final evaluation.
 5. **Update `PLAN.md`** to the preload/KV framing. Its §3–6 predate this work.
 6. **Housekeeping.**
-   - Commit the uncommitted work.
+   - ~~Commit the uncommitted work.~~ Done (`93074d8`, `d8ad76d`).
    - Decide whether to delete the old stopped pods `apu73vvxwlk9qy` and `duv6d7rvqgqk5q`. Only their disks
      bill; `duv6d7rvqgqk5q`'s host had no free GPU on restart.
