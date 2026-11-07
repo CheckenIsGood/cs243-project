@@ -42,13 +42,14 @@ Labels used throughout:
    - It derived a **break-even survival threshold σ\* ≈ 0.92**, which gets the sign right in 6/6 measured
      conditions.
    - It specified a **KV-aware preload controller**.
-6. **The controller is implemented and GPU-tested** [GPU] (§6.9–6.10). It runs entirely client-side on stock vLLM.
-   Seeds 2 and 3 are complete and seed 4 is in progress.
-   - It is **never significantly worse than the best fixed policy** (always-preload or low-priority preload) in
-     any of the 11 paired conditions so far.
-   - It keeps the full gain when memory is ample: +2.5 to +3.4 s.
-   - Under KV pressure it avoids most of the harm. On the heaviest trace it beats always-preload by 7–9 s.
-   - It fails its "never worse than off" target once: seed 2 at 50k, −2.75 s.
+6. **The controller is implemented and GPU-tested** [GPU] (§6.9–6.10), on 3 seeds × 5 conditions. It runs entirely
+   client-side on stock vLLM.
+   - It keeps the full gain when memory is ample: +3.1 to +3.4 s on the three-seed mean.
+   - Under KV pressure it has the best three-seed mean: +0.2 / +0.8 s at 50k / 40k, against −3.5 / −4.0 for
+     always-preload and −0.5 / −1.3 for low-priority preload.
+   - It beats always-preload by 7–9 s on the heaviest trace.
+   - It is significantly worse than low-priority preload in 1 of 12 cells (−0.95 s at 80k), and worse than no
+     preloading in 1 of 15 (−2.75 s at 50k).
 7. **Novelty is modest** (§7).
    - The preload request itself is the known cache-warming trick.
    - The harm is the classical premature-prefetch effect (Cao, Felten, Karlin & Li 1995). CacheScout (2026)
@@ -470,17 +471,47 @@ one fresh server. Per seed, all four modes run on the same arrival trace.
 | | 50k | 0.6 | −0.20 | +1.38 | **+1.56** [0.5, 2.6] | +0.18 (n.s.) |
 | | 40k | 0.6 | −1.30 | +0.15 | **+0.49** [−0.5, 1.5] | +0.34 (n.s.) |
 | | 40k | 0.3 | — | — | **+0.51** [−0.3, 1.3] | — |
-| 4 (103, ≈22 s) | 50k | 0.6 | −0.53 | +0.42 | **+1.82** [0.7, 3.0] | **+1.40** [0.5, 2.4] |
-| | 40k / 80k / full | | *in progress* | | | |
+| 4 (103, ≈22 s) | full | 0.6 | +3.62 | +3.41 | **+3.67** [2.4, 4.9] | +0.27 (n.s.) |
+| | 80k | 0.6 | +4.43 | +4.53 | **+3.58** [2.1, 5.0] | **−0.95** [−1.5, −0.4] |
+| | 50k | 0.6 | −0.53 | +0.42 | **+1.82** [0.7, 3.0] | **+1.40** [0.5, 2.4] |
+| | 40k | 0.6 | −1.36 | +0.52 | **+1.95** [0.75, 3.2] | **+1.43** [0.4, 2.5] |
+| | 40k | 0.3 | — | — | **+1.71** [1.0, 2.4] | — |
+
+**Mean over the three seeds**, saving vs off in seconds:
+
+| cap | rate | on | low | **ctrl** | M4 prediction for ctrl |
+|---|---|---|---|---|---|
+| full | 0.6 | +3.32 | +2.99 | **+3.42** | +3.27 |
+| 80k | 0.6 | +3.45 | +3.46 | **+3.08** | +3.01 |
+| 50k | 0.6 | −3.51 | −0.52 | **+0.21** | +1.02 |
+| 40k | 0.6 | −4.00 | −1.32 | **+0.79** | −0.12 |
+| 40k | 0.3 | — | — | **+1.83** | +1.62 |
+
+Complete: 3 seeds × 5 conditions = 15 paired cells, 51 runs, no failures. Pod `9wtqy16fleq44n` was up 3.6 h
+(≈ $2.15) and is stopped.
 
 **Against the §6.8 predictions:**
-- **"ctrl ≥ low everywhere": holds.** The worst ctrl − low is −0.11 s (n.s.). ctrl is significantly better in 3
-  cells: seed 2 full and 40k, seed 4 50k.
+- **"ctrl ≥ low everywhere": holds in 11 of 12 cells.**
+  - ctrl is significantly better in 4 cells: seed 2 full (+1.07) and 40k (+4.59); seed 4 50k (+1.40) and 40k
+    (+1.43).
+  - It is not significantly different in 7.
+  - It is **significantly worse once**: seed 4 at 80k, −0.95 s [−1.5, −0.4]. There ctrl sent fewer preloads (1.6
+    vs 2.1 per task) and had a lower final cache hit (0.38 vs 0.42). It was too conservative with ample memory.
+    The likely causes are σ\* rising under load, which blocks preloads that would have survived, or pin overhead.
+    The data does not separate the two.
 - **"ctrl ≥ 5 s better than on at 50k/40k": holds only on the heavy trace.** It is 7.1 and 9.3 s on seed 2, but
-  1.8–2.4 s on seeds 3 and 4, where "on" itself loses only 0.2–1.3 s.
-- **"ctrl never worse than off" (A-i): fails once.** Seed 2 at 50k gives −2.75 s; the other 10 cells are ≥ −0.06.
-- **Magnitudes:** close to M4 at ample memory (predicted +3.0–3.3; measured +2.5–3.4). At 50k the results are
-  seed-dependent: predicted +1.0, measured −2.75 / +1.56 / +1.82.
+  1.8–3.3 s on seeds 3 and 4, where "on" itself loses only 0.2–1.4 s. ctrl beats on in all 6 tight-memory cells.
+- **"ctrl never worse than off" (A-i): fails once.** Seed 2 at 50k gives −2.75 s; the other 14 cells are ≥ −0.06.
+  ctrl is significantly better than off in 11 of 15 cells.
+- **Magnitudes:** the three-seed means track M4 closely:
+  - full cache: predicted +3.27, measured +3.42;
+  - 80k: predicted +3.01, measured +3.08;
+  - 40k at 0.3/s: predicted +1.62, measured +1.83.
+
+  The 50k mean (+0.21) is below the prediction (+1.02) because of seed 2. The 40k mean (+0.79) is above the
+  prediction (−0.12).
+- **Ranking by three-seed mean under memory pressure** (50k and 40k): ctrl > low > on, in both. With ample memory
+  (full, 80k) all three are within 0.5 s.
 - Answers are unaffected: 90–98% identical to off, |ΔF1| ≤ 0.045.
 
 **Mechanism notes:**
