@@ -1,8 +1,12 @@
 """Paired analysis of the co-design sweep (results/sweep/kv*/s*/tasks_*_<CFG>.csv).
 
 For each KV cap: mean task latency per config (averaged over seeds), and for each config vs a baseline the paired
-difference (baseline - config, seconds saved per task) with a bootstrap CI over (seed, task) pairs. Tasks are
-paired by task_id within a seed (same arrivals). Usage: python scripts/analyze_sweep.py results/sweep [--base C0a]
+difference (baseline - config, seconds saved per task). Tasks are paired by task_id within a seed (same arrivals).
+The CI is a two-level bootstrap with the seed as the unit: resample seeds, then tasks within each resampled seed, so
+run-to-run noise (about 2.7 s on the mean for a repeated seed) is in the interval once there are several seeds.
+With fewer than 3 seeds the CI only reflects task-to-task variation and is marked "~".
+--unit task gives the old flat bootstrap over (seed, task) pairs.
+Usage: python scripts/analyze_sweep.py results/sweep [--base C0a] [--unit seed|task]
 """
 
 import argparse
@@ -32,10 +36,27 @@ def boot_ci(xs, n=4000, seed=0):
     return means[int(0.025 * n)], means[int(0.975 * n)]
 
 
+def boot_ci_seeds(by_seed, n=4000, seed=0):
+    """by_seed: list of per-seed lists of paired differences. Resample seeds, then tasks within each seed."""
+    rng = random.Random(seed)
+    k = len(by_seed)
+    means = []
+    for _ in range(n):
+        tot = cnt = 0
+        for _ in range(k):
+            xs = by_seed[rng.randrange(k)]
+            tot += sum(xs[rng.randrange(len(xs))] for _ in range(len(xs)))
+            cnt += len(xs)
+        means.append(tot / cnt)
+    means.sort()
+    return means[int(0.025 * n)], means[int(0.975 * n)]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("root")
     ap.add_argument("--base", default="C0a")
+    ap.add_argument("--unit", choices=("seed", "task"), default="seed")
     a = ap.parse_args()
     data = load(Path(a.root))
     kvs = sorted({k for k, _ in data}, key=lambda s: (s == "kvfull", int(s[2:]) if s[2:].isdigit() else 0))
@@ -49,9 +70,15 @@ def main():
             lat = sorted(d.values())
             seeds = len({s for s, _ in d})
             pairs = [base[k] - d[k] for k in d if k in base]
+            by_seed = defaultdict(list)
+            for k in d:
+                if k in base:
+                    by_seed[k[0]].append(base[k] - d[k])
             if pairs and c != a.base:
-                lo, hi = boot_ci(pairs)
+                lo, hi = boot_ci(pairs) if a.unit == "task" else boot_ci_seeds(list(by_seed.values()))
                 sig = "*" if lo > 0 or hi < 0 else " "
+                if a.unit == "seed" and len(by_seed) < 3:
+                    sig += "~"
                 diff = f"{statistics.mean(pairs):+7.2f}  [{lo:+.2f}, {hi:+.2f}] {sig}"
             else:
                 diff = "      -"
