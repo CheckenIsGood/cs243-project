@@ -91,3 +91,38 @@ def fixture_task() -> tuple[Task, Gold]:
         "comparison",
     )
     return task, Gold(task.task_id, "Arden Valley Rowing Club")
+
+
+def load_tasks(split: str = "heldout", n_questions: int = 30,
+               data_path: str = "data/raw/hotpot_distractor_validation.parquet",
+               manifest_path: str = "data/manifests/pilot.json", n_calibration: int = 20,
+               n_heldout: int = 30, distractor_passages: int = 0) -> list[tuple[Task, Gold]]:
+    """The first n_questions of a manifest split ("fixture" returns the built-in fixture task). The manifest is
+    created deterministically on first use and then reused, so every experiment draws the same questions.
+    distractor_passages > 0 enlarges each task's corpus with paragraphs of other (non-manifest) questions, so
+    different queries return different passages (larger, more realistic tool results). Seeded by task id."""
+    if split == "fixture":
+        return [fixture_task()]
+    examples = load_hotpot(data_path)
+    mp = Path(manifest_path)
+    if mp.exists():
+        manifest = json.loads(mp.read_text())
+    else:
+        manifest = make_manifest(examples, n_calibration, n_heldout)
+        mp.parent.mkdir(parents=True, exist_ok=True)
+        mp.write_text(json.dumps(manifest, indent=1))
+    byid = {e["_id"]: e for e in examples}
+    out = [from_hotpot(byid[i]) for i in manifest[split][:n_questions]]
+    if distractor_passages:
+        import random
+        from dataclasses import replace
+
+        used = set(manifest["calibration"]) | set(manifest["heldout"])
+        pool = [e for e in examples if e["_id"] not in used]
+        aug = []
+        for task, gold in out:
+            rng = random.Random(int(hashlib.sha256(task.task_id.encode()).hexdigest()[:12], 16))
+            extra = [q for e in rng.sample(pool, -(-distractor_passages // 10)) for q in from_hotpot(e)[0].passages]
+            aug.append((replace(task, passages=task.passages + tuple(extra[:distractor_passages])), gold))
+        out = aug
+    return out

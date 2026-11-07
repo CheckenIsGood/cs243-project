@@ -5,7 +5,7 @@ For an evidence log of k tool results (~`chunk` tokens each, real HotpotQA parag
   preloaded: reset cache -> k-1 preload requests (1 output token each)       (done while tools are still running)
              -> final request (only the last result + tail must be prefilled)
 Reports final-request TTFT/latency, server cached_tokens, and the preload requests' total time (the work moved
-off the critical path). Exact same prompts as the runtime (prompts.evidence_log_messages / raw_block).
+off the critical path). Same prompts as the fan-out agent in multiagent.py (prompts.evidence_log_messages / raw_block).
 
 Usage (on the pod):  python scripts/preload_bench.py --sizes 1 2 4 8 16 --reps 3 --out results/preload_bench
 """

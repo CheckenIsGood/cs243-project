@@ -1,4 +1,4 @@
-\begin{thebibliography}{7}
+\begin{thebibliography}{15}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -13,6 +13,25 @@ Abhyankar, R., He, Z., Srivatsa, V., Zhang, H., and Zhang, Y.
 \newblock In \emph{Proceedings of the 41st International Conference on Machine
   Learning (ICML)}, 2024.
 
+\bibitem[Baruah et~al.(1992)Baruah, Koren, Mao, Mishra, Raghunathan, Rosier,
+  Shasha, and Wang]{baruah1992}
+Baruah, S., Koren, G., Mao, D., Mishra, B., Raghunathan, A., Rosier, L.,
+  Shasha, D., and Wang, F.
+\newblock On the competitiveness of on-line real-time task scheduling.
+\newblock \emph{Real-Time Systems}, 4\penalty0 (2):\penalty0 125--144, 1992.
+
+\bibitem[Kalyanasundaram \& Pruhs(2000)Kalyanasundaram and
+  Pruhs]{kalyanasundaram2000}
+Kalyanasundaram, B. and Pruhs, K.
+\newblock Speed is as powerful as clairvoyance.
+\newblock \emph{Journal of the ACM}, 47\penalty0 (4):\penalty0 617--643, 2000.
+
+\bibitem[Karp(1972)]{karp1972}
+Karp, R.~M.
+\newblock Reducibility among combinatorial problems.
+\newblock In \emph{Complexity of Computer Computations}, pp.\  85--103. Plenum
+  Press, 1972.
+
 \bibitem[Kim et~al.(2024)Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and
   Gholami]{kim2024llmcompiler}
 Kim, S., Moon, S., Tabrizi, R., Lee, N., Mahoney, M.~W., Keutzer, K., and
@@ -20,6 +39,13 @@ Kim, S., Moon, S., Tabrizi, R., Lee, N., Mahoney, M.~W., Keutzer, K., and
 \newblock An {LLM} compiler for parallel function calling.
 \newblock In \emph{Proceedings of the 41st International Conference on Machine
   Learning (ICML)}, 2024.
+
+\bibitem[Koren \& Shasha(1995)Koren and Shasha]{koren1995}
+Koren, G. and Shasha, D.
+\newblock {D}$^{over}$: An optimal on-line scheduling algorithm for overloaded
+  uniprocessor real-time systems.
+\newblock \emph{SIAM Journal on Computing}, 24\penalty0 (2):\penalty0 318--339,
+  1995.
 
 \bibitem[Kwon et~al.(2023)Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang,
   and Stoica]{kwon2023vllm}
@@ -30,6 +56,11 @@ Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C.~H., Gonzalez, J.~E.,
 \newblock In \emph{Proceedings of the 29th Symposium on Operating Systems
   Principles (SOSP)}, 2023.
 
+\bibitem[Lenstra et~al.(1977)Lenstra, Rinnooy~Kan, and Brucker]{lenstra1977}
+Lenstra, J.~K., Rinnooy~Kan, A. H.~G., and Brucker, P.
+\newblock Complexity of machine scheduling problems.
+\newblock \emph{Annals of Discrete Mathematics}, 1:\penalty0 343--362, 1977.
+
 \bibitem[Lin et~al.(2024)Lin, Han, Zhang, Yang, Yang, Chen, and
   Qiu]{lin2024parrot}
 Lin, C., Han, Z., Zhang, C., Yang, Y., Yang, F., Chen, C., and Qiu, L.
@@ -38,10 +69,21 @@ Lin, C., Han, Z., Zhang, C., Yang, Y., Yang, F., Chen, C., and Qiu, L.
 \newblock In \emph{18th USENIX Symposium on Operating Systems Design and
   Implementation (OSDI)}, 2024.
 
+\bibitem[McNaughton(1959)]{mcnaughton1959}
+McNaughton, R.
+\newblock Scheduling with deadlines and loss functions.
+\newblock \emph{Management Science}, 6\penalty0 (1):\penalty0 1--12, 1959.
+
 \bibitem[{Qwen Team}(2025)]{qwen3}
 {Qwen Team}.
 \newblock {Qwen3} technical report.
 \newblock \emph{arXiv preprint arXiv:2505.09388}, 2025.
+
+\bibitem[Sleator \& Tarjan(1985)Sleator and Tarjan]{sleator1985}
+Sleator, D.~D. and Tarjan, R.~E.
+\newblock Amortized efficiency of list update and paging rules.
+\newblock \emph{Communications of the ACM}, 28\penalty0 (2):\penalty0 202--208,
+  1985.
 
 \bibitem[Yang et~al.(2018)Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and
   Manning]{yang2018hotpotqa}
@@ -51,6 +93,11 @@ Yang, Z., Qi, P., Zhang, S., Bengio, Y., Cohen, W.~W., Salakhutdinov, R., and
   answering.
 \newblock In \emph{Proceedings of the 2018 Conference on Empirical Methods in
   Natural Language Processing (EMNLP)}, 2018.
+
+\bibitem[Young(2002)]{young2002}
+Young, N.~E.
+\newblock On-line file caching.
+\newblock \emph{Algorithmica}, 33\penalty0 (3):\penalty0 371--383, 2002.
 
 \bibitem[Zheng et~al.(2024)Zheng, Yin, Xie, Sun, Huang, Yu, Cao, Kozyrakis,
   Stoica, Gonzalez, Barrett, and Sheng]{zheng2024sglang}

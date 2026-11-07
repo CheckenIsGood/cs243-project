@@ -15,7 +15,6 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Callable
 
-from .online_mdp import bounded_delay_pmf
 
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -62,6 +61,24 @@ class BM25:
             scores.append((-s, i))  # deterministic tie-break by index
         scores.sort()
         return [self.passages[i] for _, i in scores[:top_k]]
+
+
+def bounded_delay_pmf(dt: float, lo_s: float, hi_s: float, slow_p: float = 0.0,
+                      slow_lo_s: float = 0.0, slow_hi_s: float = 0.0) -> list[float]:
+    """Discretized delay distribution on a dt grid: Uniform[lo, hi] mixed with probability slow_p of
+    Uniform[slow_lo, slow_hi]."""
+    S = math.ceil(max(hi_s, slow_hi_s) / dt)
+    pmf = [0.0] * (S + 1)
+
+    def add(lo: float, hi: float, w: float) -> None:
+        a, b = round(lo / dt), round(hi / dt)
+        for s in range(a, b + 1):
+            pmf[s] += w / (b - a + 1)
+
+    add(lo_s, hi_s, 1.0 - slow_p)
+    if slow_p > 0:
+        add(slow_lo_s, slow_hi_s, slow_p)
+    return pmf
 
 
 @dataclass(frozen=True)

@@ -3,27 +3,42 @@
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \citation{kim2024llmcompiler}
+\citation{kwon2023vllm}
+\citation{zheng2024sglang}
 \citation{abhyankar2024infercept}
 \citation{lin2024parrot}
-\citation{zheng2024sglang}
-\citation{kwon2023vllm}
+\citation{karp1972}
 \newlabel{sec:problem}{{1}{1}{}{section.1}{}}
-\newlabel{sec:design}{{2}{1}{}{section.2}{}}
+\newlabel{sec:theory}{{2}{1}{}{section.2}{}}
+\citation{lenstra1977}
+\citation{baruah1992}
+\citation{koren1995}
+\citation{kalyanasundaram2000}
+\citation{mcnaughton1959}
+\citation{koren1995}
+\citation{sleator1985,young2002}
 \citation{qwen3}
 \citation{yang2018hotpotqa}
-\newlabel{sec:eval}{{3}{2}{}{section.3}{}}
-\newlabel{tab:serving}{{1}{2}{Serving view at $D=16$\,s (restricted context; mean over the same 10 questions per policy; missed runs cut at the deadline). GPU util.\ = fraction of the tool-wait window in which the model is busy}{table.1}{}}
-\newlabel{fig:main}{{1}{3}{\textbf {Main result (restricted-context stress setting).} Deadline-qualified F1 (left) and miss rate (right) vs.\ deadline, 10 held-out HotpotQA questions, 150 runs on vLLM/A40. Dashed lines: miss rate predicted by the MDP from the calibration costs. RSS and the optimal MDP policy coincide in 29/30 question--deadline cells (points offset $\pm $0.12\,s for visibility). F1 of on-time runs is similar for fold, RSS and optimal (0.77--0.78) and incremental (0.72); batch-of-2 scores 0.50 on its 7 on-time runs. The gain of RSS is timeliness, not answer quality}{figure.1}{}}
-\newlabel{fig:preload}{{2}{3}{\textbf {KV preloading microbenchmark} (live server, prefix caching on, 30 requests). Left: latency of the final request after the last result arrives; preload requests (dashed) run while tools are still out. Right: fraction of the final prompt served from the prefix cache (server-reported \texttt {cached\_tokens})}{figure.2}{}}
-\newlabel{sec:plan}{{4}{3}{}{section.4}{}}
+\newlabel{sec:system}{{3}{2}{}{section.3}{}}
+\newlabel{sec:eval}{{4}{2}{}{section.4}{}}
 \bibdata{refs}
 \bibcite{abhyankar2024infercept}{{1}{2024}{{Abhyankar et~al.}}{{Abhyankar, He, Srivatsa, Zhang, and Zhang}}}
-\bibcite{kim2024llmcompiler}{{2}{2024}{{Kim et~al.}}{{Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and Gholami}}}
-\bibcite{kwon2023vllm}{{3}{2023}{{Kwon et~al.}}{{Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang, and Stoica}}}
-\bibcite{lin2024parrot}{{4}{2024}{{Lin et~al.}}{{Lin, Han, Zhang, Yang, Yang, Chen, and Qiu}}}
-\bibcite{qwen3}{{5}{2025}{{Qwen Team}}{{}}}
-\bibcite{yang2018hotpotqa}{{6}{2018}{{Yang et~al.}}{{Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and Manning}}}
-\bibcite{zheng2024sglang}{{7}{2024}{{Zheng et~al.}}{{Zheng, Yin, Xie, Sun, Huang, Yu, Cao, Kozyrakis, Stoica, Gonzalez, Barrett, and Sheng}}}
+\newlabel{fig:main}{{1}{3}{\textbf {Asynchronous tool calls with KV preloading on vLLM} (20 held-out questions, 8 parallel searches per question). Left: deadline miss rate $P(T>D)$ vs.\ deadline, 95\% bootstrap bands over questions. Right: paired completion-time saving of preloading per question (same question, same tool delays)}{figure.1}{}}
+\newlabel{tab:serving}{{1}{3}{Serving view (means over the 20 questions). GPU util.\ = fraction of the tool-wait window in which the model is busy; cached = share of the final request's prompt served from the prefix cache}{table.1}{}}
+\newlabel{sec:plan}{{5}{3}{}{section.5}{}}
+\bibcite{baruah1992}{{2}{1992}{{Baruah et~al.}}{{Baruah, Koren, Mao, Mishra, Raghunathan, Rosier, Shasha, and Wang}}}
+\bibcite{kalyanasundaram2000}{{3}{2000}{{Kalyanasundaram \& Pruhs}}{{Kalyanasundaram and Pruhs}}}
+\bibcite{karp1972}{{4}{1972}{{Karp}}{{}}}
+\bibcite{kim2024llmcompiler}{{5}{2024}{{Kim et~al.}}{{Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and Gholami}}}
+\bibcite{koren1995}{{6}{1995}{{Koren \& Shasha}}{{Koren and Shasha}}}
+\bibcite{kwon2023vllm}{{7}{2023}{{Kwon et~al.}}{{Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang, and Stoica}}}
+\bibcite{lenstra1977}{{8}{1977}{{Lenstra et~al.}}{{Lenstra, Rinnooy~Kan, and Brucker}}}
+\bibcite{lin2024parrot}{{9}{2024}{{Lin et~al.}}{{Lin, Han, Zhang, Yang, Yang, Chen, and Qiu}}}
+\bibcite{mcnaughton1959}{{10}{1959}{{McNaughton}}{{}}}
+\bibcite{qwen3}{{11}{2025}{{Qwen Team}}{{}}}
+\bibcite{sleator1985}{{12}{1985}{{Sleator \& Tarjan}}{{Sleator and Tarjan}}}
+\bibcite{yang2018hotpotqa}{{13}{2018}{{Yang et~al.}}{{Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and Manning}}}
+\bibcite{young2002}{{14}{2002}{{Young}}{{}}}
+\bibcite{zheng2024sglang}{{15}{2024}{{Zheng et~al.}}{{Zheng, Yin, Xie, Sun, Huang, Yu, Cao, Kozyrakis, Stoica, Gonzalez, Barrett, and Sheng}}}
 \bibstyle{icml2025}
-\newlabel{fig:preloadload}{{3}{4}{\textbf {KV preloading under deadlines} (20 held-out questions, 8 searches, ${\sim }$1.4k tokens per result, ${\sim }$11k-token final prompt; context not binding). Left: miss rate $P(T>D)$ for every deadline $D$, 95\% bootstrap bands over questions. Right: paired completion-time saving per question}{figure.3}{}}
 \gdef \@abspage@last{4}

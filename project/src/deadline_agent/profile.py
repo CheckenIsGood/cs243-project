@@ -1,4 +1,4 @@
-"""Gate 1 cost profiling against the live vLLM server: measure latency over a grid of prompt and output
+"""Batch-1 cost profiling against the live vLLM server: measure latency over a grid of prompt and output
 lengths, then fit latency = overhead + prefill_per_tok * prompt + decode_per_tok * output by least squares.
 
 Output lengths are forced with vLLM's `min_tokens` + `ignore_eos`, so each sample has exactly the requested
@@ -23,7 +23,7 @@ FILLER = ("The river valley was settled by farmers who grew barley and kept shee
 def filler_messages(target_tokens: int, nonce: int) -> list[dict[str, str]]:
     # ~4 chars per token; the nonce at the start defeats any prefix-cache reuse between samples
     text = f"[{nonce}] " + (FILLER * (1 + target_tokens * 4 // len(FILLER)))[: target_tokens * 4]
-    return [{"role": "system", "content": "Summarize the text."}, {"role": "user", "content": text}]
+    return [{"role": "system", "content": "Continue the text."}, {"role": "user", "content": text}]
 
 
 async def profile(backend: VLLMBackend, prompt_grid: list[int], out_grid: list[int], reps: int, seed: int = 0):
@@ -74,3 +74,16 @@ def run_profile(base_url: str, model: str, out_path: str, prompt_grid=(256, 1024
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text(json.dumps(fit, indent=1))
     return fit
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Fit latency = overhead + prefill*prompt + decode*output on the server")
+    ap.add_argument("--base-url", default="http://127.0.0.1:8000")
+    ap.add_argument("--model", default="Qwen/Qwen3-8B")
+    ap.add_argument("--out", default="results/calibration/cost_profile.json")
+    ap.add_argument("--reps", type=int, default=3)
+    a = ap.parse_args()
+    f = run_profile(a.base_url, a.model, a.out, reps=a.reps)
+    print(json.dumps({k: v for k, v in f.items() if k != "samples"}, indent=1))

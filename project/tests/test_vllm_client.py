@@ -63,38 +63,65 @@ def test_http_error_raises():
     raise AssertionError("expected HTTPStatusError")
 
 
-def test_experiment_runs_consecutive_vllm_tasks_in_separate_event_loops(tmp_path, monkeypatch):
-    """Regression: a shared VLLMBackend reused its HTTP pool across asyncio.run() loops ('Event loop is closed')."""
-    import asyncio
-
-    import httpx
-
-    from deadline_agent import experiment as ex
-    from deadline_agent.model_client import VLLMBackend
+def test_priority_is_sent_as_integer_milliseconds_preserving_order():
+    """vLLM's request `priority` is an int (lower runs first); the serving layer passes deadlines in seconds."""
+    sent = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        import json as _json
-        body = _json.loads(request.content)
-        phase = body.get("response_format", {}).get("json_schema", {}).get("name", "")
-        content = {"plan": '{"queries": ["Arden Valley Rowing Club", "Merrow Bay Sailing Society"]}',
-                   "consume": '{"records": []}'}.get(phase, '{"answer": "Arden Valley Rowing Club"}')
-        sse = (f'data: {_json.dumps({"choices": [{"delta": {"content": content}, "finish_reason": "stop"}]})}\n\n'
-               f'data: {_json.dumps({"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5}})}\n\n'
-               "data: [DONE]\n\n")
-        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
+        sent.append(json.loads(request.content)["priority"])
+        return httpx.Response(200, content=sse({"choices": [{"delta": {"content": "{}"}, "finish_reason": "stop"}]}).encode(),
+                              headers={"content-type": "text/event-stream"})
 
-    orig_generate = VLLMBackend.generate
+    async def go(prios):
+        b = VLLMBackend("http://mock", "m")
+        b._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock")
+        for p in prios:
+            await b.generate([{"role": "user", "content": "q"}], 4, "final", extra={"priority": p})
+        await b.aclose()
 
-    async def generate(self, *a, **kw):
-        if self._client is None:
-            self._client = httpx.AsyncClient(base_url=self.base_url, transport=httpx.MockTransport(handler))
-        return await orig_generate(self, *a, **kw)
+    prios = [12.3456, 12.3449, 0.0, 1794034308.25, -3.5]
+    asyncio.run(go(prios))
+    assert all(isinstance(x, int) for x in sent)
+    assert sent == [12346, 12345, 0, 1794034308250, -3500]
+    assert sorted(range(len(prios)), key=lambda i: sent[i]) == sorted(range(len(prios)), key=lambda i: prios[i])
 
-    monkeypatch.setattr(VLLMBackend, "generate", generate)
-    cfg = ex.ExperimentConfig(backend="vllm", split="fixture", policies=["fold", "rss"], deadlines_s=[30.0],
-                              delay=dict(lo=0.01, hi=0.02, slow_p=0.0, slow_lo=0.0, slow_hi=0.0),
-                              out_dir=str(tmp_path), dt=0.01)
-    out = ex.run_experiment(cfg, "loops")
-    rows = (out / "results.csv").read_text().strip().splitlines()
-    assert len(rows) == 3  # header + 2 runs, each in its own asyncio.run() loop
-    assert all(",True," in r for r in rows[1:])
+
+def test_retries_once_when_connection_drops_before_any_output():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ReadError("connection closed by peer")
+        return httpx.Response(200, content=sse({"choices": [{"delta": {"content": '{"answer": "x"}'},
+                                                             "finish_reason": "stop"}]}).encode(),
+                              headers={"content-type": "text/event-stream"})
+
+    async def go():
+        b = VLLMBackend("http://mock", "m")
+        b._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock")
+        g = await b.generate([{"role": "user", "content": "q"}], 4, "final")
+        await b.aclose()
+        return g
+
+    g = asyncio.run(go())
+    assert len(calls) == 2 and g.text == '{"answer": "x"}' and g.finish_reason == "stop"
+
+
+def test_second_connection_failure_is_raised():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("down")
+
+    async def go():
+        b = VLLMBackend("http://mock", "m")
+        b._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock")
+        try:
+            await b.generate([{"role": "user", "content": "q"}], 4, "final")
+        finally:
+            await b.aclose()
+
+    try:
+        asyncio.run(go())
+    except httpx.ReadError:
+        return
+    raise AssertionError("expected ReadError after one retry")

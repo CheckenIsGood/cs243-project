@@ -1,12 +1,12 @@
 [project]
 name = "deadline-agent"
 version = "0.1.0"
-description = "Deadline-aware result consumption for asynchronous LLM agents"
+description = "Deadline-aware serving of multi-agent LLM workloads on a shared GPU"
 requires-python = ">=3.11"
 dependencies = ["httpx>=0.27", "pyyaml>=6", "matplotlib>=3.8", "pyarrow>=15"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "z3-solver>=4.12", "hypothesis>=6"]
 
 [build-system]
 requires = ["hatchling"]

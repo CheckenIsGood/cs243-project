@@ -5,6 +5,8 @@ set -euo pipefail
 MODEL="${MODEL:-Qwen/Qwen3-8B}"
 PORT="${PORT:-8000}"
 MAXLEN="${MAXLEN:-8192}"
+MAXSEQS="${MAXSEQS:-1}"  # 1 = one request at a time (single-task experiments); raise for multi-tenant serving
+SCHED="${SCHED:-fcfs}"    # fcfs | priority (per-request priority, lower first)
 ENVDIR="results/env"; mkdir -p "$ENVDIR"
 {
   echo "date: $(date -u +%FT%TZ)"; echo "model: $MODEL"
@@ -18,7 +20,7 @@ vllm serve --help=all 2>/dev/null | grep -E -- "--(no-)?enable-prefix-caching|--
 if [ "${PREFIX_CACHE:-0}" = "1" ]; then PC=--enable-prefix-caching; export VLLM_SERVER_DEV_MODE=1
 else PC=--no-enable-prefix-caching; fi
 echo "prefix_caching: $PC dev_mode=${VLLM_SERVER_DEV_MODE:-0}" | tee -a "$ENVDIR/serve_env.txt"
-CMD=(vllm serve "$MODEL" --dtype bfloat16 --max-model-len "$MAXLEN" --max-num-seqs 1
+CMD=(vllm serve "$MODEL" --dtype bfloat16 --max-model-len "$MAXLEN" --max-num-seqs "$MAXSEQS" --scheduling-policy "$SCHED"
      --gpu-memory-utilization 0.88 "$PC" --enable-prompt-tokens-details
      --host 127.0.0.1 --port "$PORT" ${EXTRA_ARGS:-})
 echo "${CMD[*]}" | tee "$ENVDIR/serve_cmd.txt"
