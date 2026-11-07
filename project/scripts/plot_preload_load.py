@@ -9,6 +9,7 @@ import csv
 import json
 import random
 import statistics as st
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -58,12 +59,19 @@ for p in pols:
         m = run_serving_metrics(tp)
         srv[p].append(m)
         after[p].append(m["model_s_after_last_return"])
-ax[1].boxplot([after[p] for p in pols], tick_labels=[LABELS.get(p, p).replace(" + ", "\n+ ") for p in pols])
-ax[1].set_ylabel("model time after the last tool return (s)")
+order = sorted(range(len(qs)), key=lambda i: diff[i])
+ax[1].bar(range(len(qs)), [diff[i] for i in order], color=COLORS["fold_preload"], alpha=0.8)
+ax[1].axhline(st.mean(diff), color="black", lw=0.8, ls="--", label=f"mean {st.mean(diff):.2f} s")
+ax[1].set_xticks([])
+ax[1].set_xlabel("held-out question (sorted)")
+ax[1].set_ylabel("completion time saved by preloading (s)")
+ax[1].set_title("paired: fold minus fold + KV preload, same question and delays", fontsize=8)
 ax[1].grid(alpha=0.3, axis="y")
-fig.suptitle(f"KV preloading under deadlines: 8 searches, ~1.3k tokens/result ({len(qs)} held-out questions)",
+ax[1].legend(fontsize=7)
+if not os.environ.get("REPORT_FIGS"):
+    fig.suptitle(f"KV preloading under deadlines: 8 searches, ~1.4k tokens/result ({len(qs)} held-out questions)",
              fontsize=10)
-fig.tight_layout()
+fig.tight_layout(rect=(0, 0, 1, 0.95))
 for ext in ("png", "pdf"):
     fig.savefig(d / f"preload_load.{ext}", dpi=200)
 

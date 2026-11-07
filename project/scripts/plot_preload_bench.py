@@ -5,6 +5,7 @@ Usage: python scripts/plot_preload_bench.py results/preload_bench
 
 import csv
 import statistics as st
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -47,7 +48,8 @@ ax[1].set_xlabel("final prompt tokens (server)")
 ax[1].set_ylabel("cached / prompt tokens (final request)")
 ax[1].grid(alpha=0.3)
 ax[1].legend(fontsize=7)
-fig.suptitle(f"KV preloading microbenchmark ({len(rows)} requests; Qwen3-8B, vLLM prefix caching, A40)", fontsize=10)
+if not os.environ.get("REPORT_FIGS"):
+    fig.suptitle(f"KV preloading microbenchmark ({len(rows)} requests; Qwen3-8B, vLLM prefix caching, A40)", fontsize=10)
 fig.tight_layout()
 for ext in ("png", "pdf"):
     fig.savefig(d / f"preload_bench.{ext}", dpi=200)

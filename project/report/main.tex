@@ -27,10 +27,11 @@ vLLM that decides, as results arrive, what the GPU should do with that idle time
 the final prompt, prefill raw results into the KV cache (\emph{preloading}), or wait. Decisions come from an
 exact online MDP over a profiled token-cost model and from a simple distilled rule (RSS). On Qwen3-8B on an
 A40 with HotpotQA and randomized tool delays, in a context-constrained stress setting, the scheduled policies
-miss 0/10 tasks at a 16\,s deadline versus 7--9/10 for fixed policies, because they move 4--6\,s of summarization
-off the critical path. With an unconstrained context the same policies correctly stop summarizing. KV
+miss 0/10 tasks at a 16\,s deadline versus 7--9/10 for fixed policies, because they summarize while tools are
+still running and leave 1.2\,s of summarization after the last tool return instead of 4.2--5.7\,s. With an unconstrained context the same policies correctly stop summarizing. KV
 preloading, verified with server-side cached-token counts, keeps final-answer latency at ${\approx}0.5$\,s
-regardless of evidence size (vs.\ 2.3\,s for 10.8k tokens cold).
+regardless of evidence size (vs.\ 2.3\,s for 10.8k tokens cold); with 8 searches per question it finishes
+every task earlier (1.6\,s on average, 20/20 questions) and cuts the miss rate at 16\,s from 45\% to 15\%.
 \end{abstract}
 
 \section{Problem}
@@ -114,15 +115,17 @@ setting and we label it as such; the normal-context control follows.
 \caption{\textbf{Main result (restricted-context stress setting).} Deadline-qualified F1 (left) and miss rate
 (right) vs.\ deadline, 10 held-out HotpotQA questions, 150 runs on vLLM/A40. Dashed lines: miss rate predicted
 by the MDP from the calibration costs. RSS and the optimal MDP policy coincide in 29/30 question--deadline cells
-(points offset $\pm$0.12\,s for visibility). When on time, all policies give similar F1 (${\approx}0.77$): the
-gain is timeliness.}
+(points offset $\pm$0.12\,s for visibility). F1 of on-time runs is similar for fold, RSS and optimal
+(0.77--0.78) and incremental (0.72); batch-of-2 scores 0.50 on its 7 on-time runs. The gain of RSS is timeliness,
+not answer quality.}
 \label{fig:main}
 \end{figure*}
 
 \textbf{Result.} Figure~\ref{fig:main} shows the main result. At $D=16$\,s the optimal policy and RSS miss 0/10
 tasks; static fold misses 7/10, summarize-each-result (incremental) 7/10, and batches of two 9/10. The model's
-predicted miss rates track the measurements; the main error is that the model is optimistic for fold at 16\,s
-(0.53 predicted vs.\ 0.70 measured), mostly from planning-time variance.
+predicted miss rates track the measurements; the largest errors are for static policies near their transition (fold at 16\,s: 0.53 predicted
+vs.\ 0.70 measured; batch-of-2 at 19\,s: 0.23 vs.\ 0.40). The model uses a fixed planning time (median 1.65\,s,
+max 2.7\,s), which is one likely source; we have not yet isolated it.
 
 \textbf{Where the time goes.} Table~\ref{tab:serving} breaks down the same 10 runs per policy at $D=16$\,s. Tool
 waiting is identical across policies (8.07\,s; same injected delays). What differs is how much model work lands
@@ -159,26 +162,48 @@ same questions and deadlines, RSS makes zero summaries in every run and matches 
 13/16/19\,s), as the theory predicts, while incremental still pays for summaries (miss 1.0/0.7/0; mean completion
 16.8\,s vs.\ 10.9\,s at 19\,s). The scheduler therefore only adds work when the context forces it.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{figs/preload_bench.pdf}
-\vspace{-6mm}
+\includegraphics[width=0.72\textwidth]{figs/preload_bench.pdf}
+\vspace{-2mm}
 \caption{\textbf{KV preloading microbenchmark} (live server, prefix caching on, 30 requests). Left: latency of
 the final request after the last result arrives; preload requests (dashed) run while tools are still out.
 Right: fraction of the final prompt served from the prefix cache (server-reported \texttt{cached\_tokens}).}
 \label{fig:preload}
 \vspace{-3mm}
-\end{figure}
+\end{figure*}
 
 \textbf{KV preloading.} Figure~\ref{fig:preload} measures the final step with and without preloading for
 evidence logs of 1--16 results (${\approx}600$ tokens each). Without preloading the final request's latency
 grows with evidence size (0.79\,s at 2.8k tokens, 2.29\,s at 10.8k); with preloading it stays at
-0.41--0.51\,s because 72--94\% of the prompt is served from cache. The cost is moved, not removed: the preload
-requests take 0.44--3.06\,s in total, which is free only if tool waits are long enough to hide it. In the live
-agent (4 calibration questions), every preload reused the entire previous log (e.g.\ 1830 prompt tokens, 1248
-cached) and answers were unchanged; at the pilot's small evidence size the time after the last return dropped
-only from 0.60--0.72\,s to 0.38--0.55\,s. \textbf{[Deadline experiment at 8 searches $\times$ ${\sim}$1.3k
-tokens: pending.]}
+0.39--0.51\,s, and for 4--16 results 72--94\% of the final prompt is served from cache. The cost is moved, not
+removed: for 4--16 results the preload requests take 0.44--3.06\,s in total, which is free only if tool waits are long enough to hide it. In the live
+agent (4 calibration questions), each preload reused the KV cache of the previous log (e.g.\ 1830 prompt tokens, 1248
+cached; only the uncached tail is prefilled) and answers were unchanged; at the pilot's small evidence size the time after the last return dropped
+only from 0.60--0.72\,s to 0.38--0.55\,s.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.72\textwidth]{figs/preload_load.pdf}
+\vspace{-2mm}
+\caption{\textbf{KV preloading under deadlines} (20 held-out questions, 8 searches, ${\sim}$1.4k tokens per
+result, ${\sim}$11k-token final prompt; context not binding). Left: miss rate $P(T>D)$ for every deadline $D$,
+95\% bootstrap bands over questions. Right: paired completion-time saving per question.}
+\label{fig:preloadload}
+\vspace{-3mm}
+\end{figure*}
+
+\textbf{Preloading under deadlines.} We then scale the evidence: 8 parallel searches per question over a pooled
+corpus (the question's paragraphs plus 90 distractor paragraphs), top-10 passages per search, on 20 held-out
+questions with the context not binding. Fold, \texttt{fold\_preload} and incremental never read the clock, so a
+single run per question with a non-binding deadline gives each completion time $T$, and the miss rate at
+\emph{any} deadline is exactly $P(T>D)$ on the same runs. Preloading finished earlier on 20/20 questions, by
+1.61\,s on average (95\% CI 1.49--1.72\,s; range 1.10--2.06\,s), with identical answers on all 20
+(Figure~\ref{fig:preloadload}). Model time after the last tool return fell from 2.35\,s to 0.70\,s (median),
+and at $D=16$\,s the miss rate fell from 0.45 to 0.15. The preload requests used 2.15\,s of otherwise idle GPU time
+during tool waits (GPU utilization during tools 0\% $\to$ 28\%), more than the 1.6\,s they saved, because each
+request pays a fixed overhead; this is acceptable only because that time was idle. Summarizing every result
+(incremental) is not competitive at this scale (30.3\,s mean completion: 8 summaries of ${\sim}$3\,s each).
 
 \section{Remaining challenges and plan}
 \label{sec:plan}
@@ -186,7 +211,8 @@ tokens: pending.]}
 we constructed; with an unconstrained context, summarization is unnecessary and the policies reduce to fold.
 The gain is real when context truly binds (many tools, long outputs, small context windows, multi-round agents),
 and showing that this regime is common is the main open question. (2) Ten held-out questions give wide
-intervals. (3) One request at a time; prefill is cheap for an 8B model on an A40, which limits preloading.
+intervals. (3) One request at a time; prefill is cheap for an 8B model on an A40, so preloading matters only with
+large evidence (0.15--0.3\,s saved at the pilot's ${\sim}$2--3k-token prompts, 1.6\,s at ${\sim}$11k).
 (4) In the normal-context run, summaries gave higher F1 than raw evidence (0.83 vs.\ 0.63 at 19\,s), but this is
 2/10 questions and needs a larger sample.
 

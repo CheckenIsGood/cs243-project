@@ -119,8 +119,9 @@ def plot(run_dir: str | Path, title: str | None = None, overlay_planning_s: floa
         ax.set_ylim(-0.03, 1.03)
     handles, labels = axes[1].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=min(len(labels), 4), fontsize=8, frameon=False)
-    fig.suptitle(title or f"{run_dir.name} ({nq} questions; 95% bootstrap CI over questions; "
-                 f"points offset ±0.12 s for visibility)", fontsize=10)
+    if title != "":
+        fig.suptitle(title or f"{run_dir.name} ({nq} questions; 95% bootstrap CI over questions; "
+                     f"points offset ±0.12 s for visibility)", fontsize=10)
     fig.tight_layout(rect=(0, 0.12 if len(labels) <= 4 else 0.18, 1, 1))
     for ext in ("pdf", "png"):
         fig.savefig(run_dir / f"figure.{ext}", dpi=200)

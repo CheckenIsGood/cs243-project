@@ -121,3 +121,15 @@
 - `report/main.tex` (ICML 2025 style, `latexmk -pdf main.tex`): 3 pages + references. Figures: pilot figure,
   preload microbenchmark; Table 1 serving view. Preload deadline result pending. Author names are placeholders.
   Bib entries written from memory: verify before submission.
+
+## Preload deadline experiment — RESULT (`results/real/preload-load`, 60/60 runs, 0 errors)
+- fold_preload finished earlier than fold on 20/20 held-out questions: mean 1.61 s (95% CI 1.49-1.72; range
+  1.10-2.06), identical answers 20/20. Model time after last return (median) 2.35 s -> 0.70 s. Miss at D=16:
+  fold 0.45 -> fold_preload 0.15; at D=14: 0.65 -> 0.55; D=18: 0.05 -> 0. Incremental mean 30.3 s.
+- Preloads used 2.15 s of idle GPU time during tool waits (util 0 -> 0.28) to save 1.6 s.
+- Figure: `results/real/preload-load/preload_load.png`; summary JSON alongside.
+
+## Pod
+- Stopped 2026-11-07 ~04:20 UTC (status EXITED; uptime 11471 s ≈ 3.2 h × $0.59 ≈ $1.88 compute). /workspace
+  volume (50 GB) kept and bills at the stopped-disk rate until terminated. /opt/venv is on container disk and is
+  gone: rerun scripts/pod_setup.sh after a restart. Full pod results/logs backup: results/pod_backup/.

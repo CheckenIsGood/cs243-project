@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  6 NOV 2026 22:50
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  6 NOV 2026 23:13
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -497,7 +497,7 @@ ocal/texlive/2025/texmf-dist/fonts/enc/dvips/base/8r.enc}
 
 ]
 LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 9
-4.
+5.
 (/usr/local/texlive/2025/texmf-dist/tex/latex/psnfss/ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 )
@@ -505,21 +505,21 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `pcr' (encoding: OT1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-<figs/pilot.pdf, id=40, 650.43pt x 245.718pt>
-File: figs/pilot.pdf Graphic file (type pdf)
-<use figs/pilot.pdf>
-Package pdftex.def Info: figs/pilot.pdf  used on input line 112.
-(pdftex.def)             Requested size: 380.50095pt x 143.74632pt.
 
 Underfull \vbox (badness 10000) has occurred while \output is active []
 
 
 
+<figs/pilot.pdf, id=40, 650.43pt x 245.718pt>
+File: figs/pilot.pdf Graphic file (type pdf)
+<use figs/pilot.pdf>
+Package pdftex.def Info: figs/pilot.pdf  used on input line 113.
+(pdftex.def)             Requested size: 380.50095pt x 143.74632pt.
 <figs/preload_bench.pdf, id=43, 650.43pt x 238.49101pt>
 File: figs/preload_bench.pdf Graphic file (type pdf)
 <use figs/preload_bench.pdf>
-Package pdftex.def Info: figs/preload_bench.pdf  used on input line 164.
-(pdftex.def)             Requested size: 234.8775pt x 86.12234pt.
+Package pdftex.def Info: figs/preload_bench.pdf  used on input line 167.
+(pdftex.def)             Requested size: 351.23279pt x 128.78685pt.
 
 Underfull \vbox (badness 10000) has occurred while \output is active []
 
@@ -530,30 +530,46 @@ pdfTeX warning (ext4): destination with the same identifier (name{table.1}) has
  been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.192 
+l.184 
       ]
+<figs/preload_load.pdf, id=60, 650.43pt x 238.49101pt>
+File: figs/preload_load.pdf Graphic file (type pdf)
+<use figs/preload_load.pdf>
+Package pdftex.def Info: figs/preload_load.pdf  used on input line 187.
+(pdftex.def)             Requested size: 351.23279pt x 128.78685pt.
 
-(./main.bbl
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+
 
 [3
 pdfTeX warning (ext4): destination with the same identifier (name{figure.1}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.62 
-     
+l.226 
+      
 pdfTeX warning (ext4): destination with the same identifier (name{figure.2}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.62 
-      <./figs/pilot.pdf> <./figs/preload_bench.pdf>])
+l.226 
+       <./figs/pilot.pdf> <./figs/preload_bench.pdf>] (./main.bbl
 
-
+)
 
 [4
-
-] (./main.aux)
+pdfTeX warning (ext4): destination with the same identifier (name{figure.3}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.229 \end{document}
+                     <./figs/preload_load.pdf>] (./main.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
@@ -562,11 +578,11 @@ Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  ) 
 Here is how much of TeX's memory you used:
- 13816 strings out of 473190
- 211883 string characters out of 5715801
- 664848 words of memory out of 5000000
- 36569 multiletter control sequences out of 15000+600000
- 598283 words of font info for 258 fonts, out of 8000000 for 9000
+ 13851 strings out of 473190
+ 212322 string characters out of 5715801
+ 663866 words of memory out of 5000000
+ 36575 multiletter control sequences out of 15000+600000
+ 599461 words of font info for 276 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  75i,11n,79p,1001b,640s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb
@@ -584,10 +600,10 @@ exmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/texmf-dist/
 fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/fonts/type
 1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/urw/time
 s/utmri8a.pfb>
-Output written on main.pdf (4 pages, 220357 bytes).
+Output written on main.pdf (4 pages, 239638 bytes).
 PDF statistics:
- 277 PDF objects out of 1000 (max. 8388607)
- 119 compressed objects within 2 object streams
- 20 named destinations out of 1000 (max. 500000)
- 59403 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 310 PDF objects out of 1000 (max. 8388607)
+ 126 compressed objects within 2 object streams
+ 21 named destinations out of 1000 (max. 500000)
+ 59408 words of extra memory for PDF output out of 61914 (max. 10000000)
 
