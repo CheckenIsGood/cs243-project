@@ -67,6 +67,13 @@ class TaskResult:
     end: float | None
     answer: str | None
     model_calls: int
+    # final-call instrumentation (fan-out / orchestrator final); times are on the same clock as `end`
+    t_last_tool: float | None = None  # last tool result returned
+    final_submit: float | None = None
+    final_first: float | None = None  # first output token of the final call
+    final_prompt_tokens: int | None = None
+    final_cached_tokens: int | None = None  # prompt tokens served from the prefix cache (vLLM usage details)
+    n_preloads: int = 0
 
 
 @dataclass
@@ -172,16 +179,21 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
     """preload modes (fan-out tasks): False (off); True (preload each returned result at the task's normal
     priority); "low" (preloads at the lowest engine priority); "jit" (just-in-time: every request's priority is
     the time by which its work is needed -- now for plan/final calls, and for a preload the expected time at which
-    the agent's last outstanding tool returns, from the tool-latency distribution given elapsed times).
+    the agent's last outstanding tool returns, from the tool-latency distribution given elapsed times); "chain" (as True,
+    and when a preload finishes while results that arrived during it are not yet prefilled, the next preload is sent
+    at once instead of at the next tool return).
     Preloads never block the agent: at most one is in flight; when the final call is ready, an unfinished preload
     is cancelled (its already-computed KV blocks stay in the prefix cache) and the final call is sent at once."""
     calls = 0
+    n_pre = 0
+    t_last = gfin = None
 
     async def llm(stage: str, msgs, max_tokens: int, schema, phase: str | None = None, prio: float | None = None):
-        nonlocal calls
+        nonlocal calls, n_pre
         if not layer.keep(at, stage):
             raise _Drop()
         calls += 1
+        n_pre += phase == "preload"
         if prio is None:
             if phase == "preload" and preload == "low":
                 prio = LOWEST_PRIORITY
@@ -213,7 +225,30 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
             # eager asynchronous tool issue (Lemma 3)
             t_issue = now()
             tools = [asyncio.create_task(tool.run(f"c{i + 1}", i, q)) for i, q in enumerate(uniq)]
-            if at.shape == "fanout":
+            if at.shape == "fanout" and preload == "chain":
+                # like True, but a finished preload immediately chains another if results arrived meanwhile, so
+                # results that land while a preload is in flight are covered without waiting for the next arrival
+                logged, remaining, covered = [], set(tools), 0
+                while remaining:
+                    live = {pending} if pending is not None and not pending.done() else set()
+                    done, _ = await asyncio.wait(remaining | live, return_when=asyncio.FIRST_COMPLETED)
+                    for fut in sorted(done & remaining, key=lambda f: int(f.result().call_id[1:])):
+                        remaining.discard(fut)
+                        r = fut.result()
+                        if r.error:
+                            raise RuntimeError(r.error)
+                        logged.append(raw_block(r.call_id, uniq[int(r.call_id[1:]) - 1], r.text))
+                    if remaining and len(logged) > covered and (pending is None or pending.done()):
+                        covered = len(logged)
+                        pending = asyncio.create_task(llm("tool", evidence_log_messages(at.task.question, list(logged)),
+                                                          1, None, "preload"))
+                t_last = now()
+                if pending is not None and not pending.done():
+                    pending.cancel()
+                await asyncio.gather(*([pending] if pending else []), return_exceptions=True)
+                g = gfin = await llm("final", evidence_log_messages(at.task.question, logged), final_max_tokens,
+                                     FINAL_SCHEMA, "final")
+            elif at.shape == "fanout":
                 logged: list[str] = []
                 for fut in asyncio.as_completed(tools):
                     r = await fut
@@ -228,11 +263,12 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
                             prio = now() + expected_wait_for_all(delay, waiting)
                         pending = asyncio.create_task(llm("tool", evidence_log_messages(at.task.question, list(logged)),
                                                           1, None, "preload", prio))
+                t_last = now()
                 if pending is not None and not pending.done():  # final is ready: do not wait for the preload
                     pending.cancel()
                 await asyncio.gather(*([pending] if pending else []), return_exceptions=True)
-                g = await llm("final", evidence_log_messages(at.task.question, logged), final_max_tokens,
-                              FINAL_SCHEMA, "final")
+                g = gfin = await llm("final", evidence_log_messages(at.task.question, logged), final_max_tokens,
+                                     FINAL_SCHEMA, "final")
             else:  # orchestrator with k workers, each: its search -> its own model call
                 async def worker(i: int, q: str):
                     r = await tools[i]
@@ -244,7 +280,8 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
                     except (ValueError, AttributeError):
                         return q, w.text[:300]
                 reports = await asyncio.gather(*(worker(i, q) for i, q in enumerate(uniq)))
-                g = await llm("ofinal", orchestrator_final_messages(at.task.question, list(reports)), final_max_tokens,
+                t_last = now()
+                g = gfin = await llm("ofinal", orchestrator_final_messages(at.task.question, list(reports)), final_max_tokens,
                               FINAL_SCHEMA, "final")
             try:
                 answer = parse_final(g.text)
@@ -261,7 +298,9 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
         for tk in tools + ([pending] if pending else []):  # a dropped / late task stops its tool calls and preload
             tk.cancel()
         await asyncio.gather(*tools, *([pending] if pending else []), return_exceptions=True)
-    return TaskResult(at.task_id, at.shape, at.arrival, at.deadline, status, end, answer, calls)
+    return TaskResult(at.task_id, at.shape, at.arrival, at.deadline, status, end, answer, calls, t_last,
+                      gfin and gfin.submit_t, gfin and gfin.first_token_t, gfin and gfin.prompt_tokens,
+                      gfin and gfin.cached_tokens, n_pre)
 
 
 def make_workload(tasks: list[Task], rate: float, duration: float, seed: int, shapes=("fanout", "orchestrator"),
@@ -292,8 +331,9 @@ async def serve(workload: list[AgentTask], backend, layer: ServingLayer, delay: 
         shifted = AgentTask(at.task_id, at.task, t0 + at.arrival, t0 + at.deadline, at.shape, at.width, at.value)
         r = await run_agent_task(shifted, backend, layer, delay, seed, **kw)
         r.arrival, r.deadline = at.arrival, at.deadline
-        if r.end is not None:
-            r.end -= t0
+        for k in ("end", "t_last_tool", "final_submit", "final_first"):
+            if getattr(r, k) is not None:
+                setattr(r, k, getattr(r, k) - t0)
         return r
 
     return list(await asyncio.gather(*(one(at) for at in workload)))

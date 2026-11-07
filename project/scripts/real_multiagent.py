@@ -33,7 +33,7 @@ PRESETS = {
                     manifest="data/manifests/multitenant.json", n_heldout=400, distractors=90, slack=[1000.0, 1000.0],
                     isolated_fanout=15.0, isolated_orchestrator=15.0, final_prompt_tokens=11000),
 }
-PRELOAD_MODES = {"off": False, "on": True, "low": "low", "jit": "jit"}
+PRELOAD_MODES = {"off": False, "on": True, "low": "low", "jit": "jit", "chain": "chain"}
 
 
 class Counting:
@@ -83,14 +83,23 @@ def main():
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
     ap.add_argument("--model", default="Qwen/Qwen3-8B")
     ap.add_argument("--out", default="results/real/multiagent")
+    ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
+                    help="override preset fields, e.g. --set result_cap=200 width=4 (values parsed as JSON)")
+    ap.add_argument("--delay", type=float, nargs="+", default=[0.5, 4.0, 0.3, 4.0, 12.0],
+                    help="DelayModel arguments for the tool latency distribution")
     a = ap.parse_args()
     cfg = dict(PRESETS[a.preset], duration=a.duration)
+    for kv in a.set:
+        k, _, v = kv.partition("=")
+        if k not in cfg:
+            raise SystemExit(f"unknown preset field {k!r}; one of {sorted(cfg)}")
+        cfg[k] = json.loads(v)
     prof = json.loads(Path(a.profile).read_text())
     pairs = load_tasks("heldout", cfg["n_questions"], manifest_path=cfg["manifest"], n_heldout=cfg["n_heldout"],
                        distractor_passages=cfg["distractors"])
     tasks = [t for t, _ in pairs]
     gold = {g.task_id: g.answer for _, g in pairs}
-    delay = DelayModel(0.5, 4.0, 0.3, 4.0, 12.0)
+    delay = DelayModel(*a.delay)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(dict(vars(a), **cfg), indent=1))
