@@ -349,7 +349,7 @@ deterministic, no lags). Replace §7 by this citation. Mark Thm A as tight in th
 - I found no code/paper mismatch.
 
 **Mutation testing of the author's 20 tests.** False claims were injected by monkeypatching; this is scripted in
-[V: mutations_author_tests_detect_false_claims] and [V: mutations_author_lemmaP1_test_is_weak].
+[V: mutations_author_tests_detect_false_claims] and (since c46b893) [V: mutations_author_lemmaP1_checker_not_mutation_protected], which replaces the earlier `mutations_author_lemmaP1_test_is_weak`.
 
 Detected (the test fails):
 - G3 with 1/(m+1);
@@ -388,3 +388,80 @@ None of these weak spots affects a theorem: each claim is established by its pro
 - **Continuous size laws** for Thm G (see the fix).
 - **Lemma P1** is proved for all laws. The numeric checks cover finite laws.
 - **The primary Gittins, Weiss and Sevcik texts** could not be accessed.
+
+---
+
+## Re-verification (c46b893), 2026-11-07
+
+**What was re-checked.** Every fix the author applied in c46b893 to `docs/stochastic_theory_ext.md`,
+`src/codesign/stochastic_theory_ext.py` and `tests/test_stochastic_theory_ext.py`, against the eaa6958 versions;
+each new or reworded statement line by line; the author's notes (a) and (b); the new code; mutations of every new
+or tightened author test. The theory files are unchanged between c46b893 and HEAD (000df35 touches only vLLM code).
+
+**My suite now has 27 tests** (4 new, 1 replaced); with the author's 22 tests, 49 pass in about 45 s
+(`../project/.venv/bin/python -m pytest -q tests/test_stochastic_theory_ext.py tests/test_stochastic_ext_verify.py`
+from `codesign/`). The verifier module gained section I (unrestricted benchmark: q⁰, LB⁰, β_cp⁰, the additive
+2+β branch, the unrestricted calibrated constants). It still imports nothing from the author's modules.
+
+### Verdict table
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| Thm G restricted to discrete finite-support laws, independent across nodes and tasks | **VERIFIED** | §2 statement and the remark below it now match what MV, the proof and the code assume; continuous/unbounded laws are explicitly not claimed. |
+| Thm G m = 2 instance (four unit jobs) exercises 1/m | **VERIFIED** | My code: ALG 6, LB_cp 4, Gitt₁ 10, ΣwEW 4, so 6 ≤ 4 + 6/2 and 6 > 4 + 6/4. Mutation Gitt₁ → (Gitt₁+ΣwEW)/2 now fails the author's test. |
+| Lemma P1: second bound only for Δ < 2 | **VERIFIED** | 1 − √(Δ/2) ≤ 0 iff Δ ≥ 2; ρ's second branch read as ∞ there; `thmDR_constant` applies it only for D < 2 (mutation that drops it fails). |
+| Thm P "loses 1+Δ" as a limit | **VERIFIED** | (n+1)/(nq+2−q) ≤ 1/q = 1+Δ for each n, → 1+Δ (Z3 in [V: thmP_necessity_family_one_plus_delta]). |
+| Thm P "within a factor ≤ 43/16" | **VERIFIED** | (1 + (27/16)(1+Δ))/(1+Δ) = 27/16 + 1/(1+Δ) ≤ 43/16, equality at Δ = 0. |
+| Δ_W ≤ max node CV² for correlated nodes (Minkowski) | **VERIFIED** | sd(Σp) ≤ Σ sd(p) ≤ √Δ Σ E p; my correlated-node test passes. |
+| c\* ∈ [16/27, 58/77], 58/77 witness | **VERIFIED** | Witness recomputed exactly (means 1, CV² 19, (1+Δ)E min = 58/77). |
+| Pair-constant range "[77/58, 27/16]·(1+Δ)" (§0 open list) | **VERIFIED, wording nit** | Correct as sup_Δ ρ(Δ)/(1+Δ) ∈ [77/58, 27/16]; the lower end holds at Δ = 19 (as the parenthesis says), not for every Δ (ρ(0) = 1). Suggest writing it as a sup over Δ. |
+| Thm H unrestricted: β_cp⁰, LB⁰, E[ALG] ≤ (1+β_cp⁰)LB⁰ + Gitt₁(Z′) − ΣwEZ′ ≤ (1+β_cp⁰+λ)OPT_na | **VERIFIED** | Node-wise CP_alg ≤ (1+β_cp⁰)CP⁰ on every realization; full chain exact on 30 random instances with fan-out nodes; LB⁰ ≤ LB_cp; necessity instance: restricted β_cp = 0 against LB⁰ gives 17/4 < ALG = 19/4 ≤ (1+5/2)·17/4 [V: unrestricted_thmH_chain_with_fanout_nodes]. H1 survives: pieces exist only after the parent finishes and the single-machine relaxation strips lags, so early piece prefill maps to a feasible s-process schedule. |
+| Thm DR / Prop K unrestricted: min{1+β_cp⁰, 2+β} | **VERIFIED** | Both CP inequalities (node-wise, and additive CP_alg ≤ CP⁰ + (1+β)σ) hold on every realization; the chain bound with the min holds exactly on 60 Prop K and 30 DR random instances; the 2+β branch is strictly smaller on several of them; Σw Eσ ≤ LB_cp [V: unrestricted_propK_and_DR_both_branches]. Taking β_cp⁰ and β as separate maxima over realizations is sound (each branch is a global bound). |
+| Calibrated 2.54 / 2.74 / 8.74 / 4.84 / 5.82 / 6.78 / 10.01 | **VERIFIED** | My independent recomputation equals the author's `calibrated_constants(True)` **exactly** (rational equality; DR as float): 2.5444, 2.7403, 8.7423, 4.8424, 5.8200, 6.7753, 10.0065. The min takes the 1+β_cp⁰ branch (1.051 vs 5.478 for K64; 1.152 vs 8.068 for DR) [V: unrestricted_calibrated_constants_recomputed]. |
+| κ family ([base] §4.3) | **VERIFIED** | Same family as mine (kicked reservation ℓ⁺_y + L_max − 1); `test_lemmaD0_charge_tight_family` and [V: kappa_instance_and_D0_tightness_family] pass. |
+| Thm A tight (Schulz–Skutella, Megow–Schulz L2.2); √2 as a remark | **VERIFIED** | §0, §7, §8, §9 rewritten; 228/160 at n = 3 and 1.98459 at n = 150 recomputed; [base] `test_thmA_constant_two_is_tight_schulz_skutella` passes. |
+| New code: `RNode.fanout/q0`, `hyb_cp` 'opt0', `thmH_constants/lb_cp_h(preload_aware)`, `CapNode/DRNode.fanout`, `thmDR_constant`, `thmD_*_constant(preload_aware)`, `calibrated_constants`, `cv2` import | **VERIFIED** | Each matches the doc formula; `cv2` is used by `thmDR_constant`; no mismatch found. |
+| New/tightened author tests are not vacuous | **VERIFIED** (with two weak spots below) | Fail under: m = 2 Gitt₁ shift; β_cp → 0 or 0.8·β_cp in the Thm H instance; β_cp⁰ → β_cp; q⁰ → q (RNode, CapNode); h_constants ignoring preload_aware; the min forced to 2+β; the Δ < 2 branch removed [V: mutations_author_new_tests_c46b893]. |
+| Lemma P1 checker mutation-protected (note (b)) | **FIX STILL NEEDED** (test only) | See ruling (b). |
+| Diff scan | **No unrequested changes** in the extension files | Apart from the requested fixes, the only changes are the `deadline_agent` → `codesign` import paths. The base doc/code/test changes in c46b893 (Thm D scope, R6, R0b/R0c, LB2, D0/D1) answer the other verifier and are outside this audit. |
+
+### Ruling (a): q⁰ = q for piece-free nodes
+
+**Stated: yes. Valid: yes. Inherited correctly: yes.**
+
+- The assumption is explicit in ext §4 ("each node's q tokens arrive at its availability") and in [base] §4
+  ("no token of v can be prefilled before v's parent completes").
+- It is a modelling assumption, not a lemma. Under it, no schedule can prefill a piece-free node earlier, so
+  α q⁰ = α q is a valid lower-bound term. q⁰ ≡ 0 is always valid but weaker.
+- With q⁰ = q, β_cp⁰ = α(q+ρ−q)/(αq + aX_min) = β_cp exactly. So Thm H as stated is unchanged in its own
+  piece-free model, and the scope paragraph is only needed for fan-out prompts.
+- **Thm H** claims only 1+β_cp⁰, which is correct; H1–H3 are unaffected (see the table).
+- **Thm DR and Prop K** may use min{1+β_cp⁰, 2+β}. The 2+β branch needs only (L0) (Σ w E σ ≤ OPT, also against
+  OPT_clair) and β σ ≥ αρ on every realization.
+- Optional: Thm H could add the analogous additive branch, but it is not needed for the stated constants.
+
+### Ruling (b): is the false 0.76 / 0.80 constant now caught?
+
+**As a claim: yes. As a checker mutation: no.**
+
+- The new test `lemmaP1_witness_58_77_refutes_larger_constants` computes the witness directly and certifies
+  c\* ≤ 58/77 < 0.76 < 0.80. So the suite now refutes the false constants as statements.
+- But `emin_lower_bound_holds` is called by exactly one test (`lemmaP1_emin_lower_bound_and_witness`), and nowhere
+  in the library. Raising its constant to 0.76 or 0.80 leaves the **whole author suite passing**. I ran all 22
+  tests under each mutation and none failed; only the constant 1/(1+Δ) is caught.
+- **Fix (one line).** Add `assert emin_lower_bound_holds(X, Y)` with the 58/77 witness to the witness test. It holds
+  for the true checker and fails for any checker constant above 58/77.
+- My stale test `mutations_author_lemmaP1_test_is_weak` is replaced by
+  [V: mutations_author_lemmaP1_checker_not_mutation_protected], which encodes exactly this (callers by source
+  inspection, both mutations, and the recommended assertion).
+
+### Remaining weak spots (tests only; no theorem affected)
+
+1. The P1 checker is not mutation-protected (ruling (b)).
+2. The random part of `test_preload_aware_constants_H_DR_K` does not discriminate β_cp⁰. With the calibrated
+   asserts held fixed, it still passes with β_cp⁰ := 0, and also with the Gitt₁(Z′) − ΣwEZ′ term dropped, because
+   two-task instances have slack. Its calibrated asserts do catch every constant mutation I tried, and
+   [V: unrestricted_thmH_chain_with_fanout_nodes] includes a one-task instance where the restricted constant fails.
+3. The 2+β branch of the min never binds in the extension's tests, so dropping the min goes undetected. This is
+   harmless: without the min the constant is weaker but still valid. [V: unrestricted_propK_and_DR_both_branches]
+   covers the binding case.

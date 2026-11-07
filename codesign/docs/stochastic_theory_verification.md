@@ -365,3 +365,103 @@ So the pathwise-lemma tests are non-vacuous. The ratio tests mostly confirm loos
 - R7.1 and R7.4 (they live in `open_problem.md`, outside this commit).
 - Exact OPT for the engine model (Thm D). Its lower bounds were checked analytically, the preload counterexample by an explicit schedule. I did not compute an exact engine optimum, so I cannot say whether the original Thm D constant actually fails against a preloading OPT. I only show that its proof does not cover that case.
 - Lean/Coq formalisation: not attempted. Z3 covers the algebraic lemmas.
+
+---
+
+## Re-verification (c46b893), 2026-11-07
+
+This section covers the author's revision at commit c46b893:
+- `codesign/docs/stochastic_theory.md` (907 lines);
+- `src/codesign/stochastic_theory.py`;
+- `tests/test_stochastic_theory.py` (32 tests).
+
+These three files are byte-identical at c46b893, at HEAD (000df35) and in the working tree. Line numbers below refer to `git show c46b893:codesign/docs/stochastic_theory.md`.
+
+What I did:
+- Re-read every changed passage line by line, against the full diff from e17bd7f.
+- Re-ran my independent suite: `tests/test_stochastic_verify.py`, now 41 tests, all passing (`../project/.venv/bin/python -m pytest -q tests/test_stochastic_verify.py`, about 60 s). The author's 32 tests also pass.
+- Added 10 tests (`test_reverify_*` and one `test_CROSS_CHECK_*`) and the helpers they need (`Node.q0`, `beta_cp0`, `lb0_q0`, `thmD_unrestricted_constant`, `schulz_skutella`, `release_order_np`, `d0_tight_family`, `r6_isolated`).
+- Mutation-tested the new and tightened tests (21 mutations, table below).
+
+### Verdicts
+
+| Item (new doc lines) | Verdict | Evidence |
+|---|---|---|
+| (L1) restricted to "no prefill before availability" (l. 381–386) | **VERIFIED** | The restricted (L1) is the original argument, now with the scope that makes it valid. The counterexample numbers 16 < 26 and LB⁰ = 15 are reproduced. |
+| Arrival assumption (l. 370–373) and q⁰ (l. 387–393) | **VERIFIED** (one wording suggestion) | Under the stated assumption, a piece-free node's q tokens do not exist before availability, so αq⁰ + (a+c)X after availability is a valid per-node length for every engine schedule. q⁰ = 0 for nodes with pieces is conservative and always valid. Suggestion: say explicitly that a multi-parent node whose inputs come from different parents' tools at different times must be modelled with pieces. Otherwise the assumption is a real restriction of the model, not a property of it. |
+| (L0) Σ w σ ≤ OPT_na (l. 394–395) | **VERIFIED** | J's prefill and decode tokens cannot be processed before r_J. By the (L2) rate inequality, α·prefill + c·decode ≤ elapsed time on [r_J, C_J]. |
+| Thm D restricted: (1+β_cp) + 2max(1+β,θ) (l. 496–507) | **VERIFIED** | Same proof as before; the scope is now stated. Step 1 now also notes CP′ ≤ (1+β_cp)CP^opt (Z3 earlier; exact check in the author's test). |
+| Thm D unrestricted: min(1+β_cp⁰, 2+β) + 2max(1+β,θ) (l. 509–524) | **VERIFIED** | Both branches: (a) the node-wise inequality α(q+ρ)+aX ≤ (1+β_cp⁰)(αq⁰+(a+c)X); (b) the additive α(q+ρ)+aX ≤ (a+c)X + (1+β)σ, with LB⁰ ≤ OPT, Σwσ ≤ OPT, S ≤ 2OPT. All Z3-proved in `test_reverify_thmD_unrestricted_algebra_z3`. The statement's use of LB⁰ (with q⁰) in the additive branch is valid, because LB⁰(q⁰) ≥ LB⁰(q⁰ ≡ 0). Exact check on 150 random instances (chains and DAGs, bounded and unbounded memory, hold and preload), including both pathwise step-1 forms: `test_reverify_thmD_unrestricted_both_branches`. Unbounded-memory form min(…) + (1+β) ≤ 3+2β: correct. |
+| Sentence "ALG = 24 > (1+β_cp)·LB⁰ = 15, so the restricted constant cannot simply be reused against LB⁰" (l. 525–527) | **FIX STILL NEEDED** (wording only) | The numbers are right (ALG = CP′ = 24, LB⁰ = 15, β_cp⁰ = 11; reproduced). But the instance refutes only **step 1** with β_cp against CP⁰. The full restricted-constant inequality still holds here: (1+β_cp)LB⁰ + max(1+β,θ)·S = 15 + 14 = 29 ≥ 24. Suggested wording: "so step 1 cannot use β_cp against CP⁰". The next paragraph correctly says the restricted constant is open against the unrestricted benchmark. |
+| Engine box (l. 533–546), "without pieces the versions coincide" | **VERIFIED** | With no pieces, q⁰ = q and β_cp⁰ = β_cp. Under the arrival assumption the two benchmark classes coincide, and the unrestricted constant is ≤ the restricted one. The time-sharing remark matches my Z3 check (λ = (a+cB)/(2a)). |
+| Calibrated table (l. 572–578): 2.80 unbounded, 10.01 at 64k | **VERIFIED** | Recomputed from scratch with exact rationals: β_cp⁰ = 0.0506, 2.80, 10.01; restricted 9.99 (`test_reverify_calibrated_unrestricted_table`). |
+| Lemma D0 rewritten proof (l. 432–444) | **VERIFIED** | Cases 1–3 checked in Z3 (y fits; y does not fit) plus 117k simulated kick events, including simultaneous arrivals. One trivial case is unstated: if the old prefix already stopped above y, nothing changes and nothing is kicked. Harmless. |
+| D0 tightness family (l. 446–450; the extension verifier's family) | **VERIFIED** | Own simulator: one kick event with kicked reservation exactly ℓ⁺_y + L_max − 1, recompute > ℓ⁺_y + L_max − 3, Lemma D1 holds, for (L, s) = (10,3), (50,20), (200,50) (`test_reverify_lemmaD0_tight_family_own_simulator`). Using a fixed priority order (y, z1, z2) is legitimate, because Lemmas D0/D1 hold for any fixed order. |
+| Lemma D1 case (B) fix (l. 464–467) | **VERIFIED** | "> M′ − ℓ⁺_u ≥ M" and "at least m": correct and complete. |
+| Thm A tightness 2 via Schulz–Skutella / Megow–Schulz (l. 242–262) | **VERIFIED** | Own simulator plus own exact DP: n = 3 scaled by 6 gives ALG = 228 and OPT = 160 = release-order UB; ALG/UB = 1.622, 1.891, 1.9846 at n = 5, 20, 150. Checked structurally: each job is preempted with exactly 1/n left, and the release-order schedule never idles. Asymptotically ALG ≈ (n+1)n² while UB ≈ n³/2, so the ratio → 2. Source: Megow–Schulz states the P-WSPT bound 2 is tight (abstract/snippet) and Schulz–Skutella that the ratio is "precisely 2" (snippet). I could **not** open the full PDFs (redirects / 403), so the label "Lemma 2.2" and "for any number of machines" are not checked. |
+| Lag-trap demoted to a remark; "tightness open" removed (§2.4, §7.6, §10.3) | **VERIFIED** | Consistent everywhere. |
+| Smith-term sharpness (l. 237–238) | **VERIFIED** | 210 and 110 ≤ 125 reproduced independently. |
+| LB2 sharpness (l. 326–330) | **VERIFIED** | Own code: the γ < 0 case, list schedule E = 69.97 (a non-preemptive policy, so ≥ OPT_np) < LB2(γ:=0) = 392/5, LB2 ≤ 69.97; 11 unit jobs: LB2 = 121/2, OPT_np = 66 < 1.1·LB2. |
+| Token counts known at release (l. 365–368, §10.7) | **VERIFIED** | Fixed as recommended. The new §10.7 claim that bounds q̄, X̄ known at release "restore the theorem with those bounds in Z′ and in the constants" is plausible: every Lemma D1 charge only gets larger, and the lower bounds use actual sizes. But it is unproved, and the constants must be redefined as reserved-over-actual ratios. It sits in Limitations, so this is acceptable. Suggestion: write "we expect". |
+| R0b relabelled "proof sketch" (l. 596–599, §10.6) | **VERIFIED** | Matches my verdict. |
+| R0c both instances (l. 617–625) | **VERIFIED** | Matches my fix, reproduced. |
+| R6 chains exact (l. 707–712) | **VERIFIED** | Reproduced on 60 chain instances. |
+| R6 DAGs "no identity" (l. 714–726) | **VERIFIED; my earlier suggestion was wrong** | See ruling (a). |
+| R7.5 wording (worst-case ratio ≥ 1+Δ as a supremum) | **VERIFIED** | (n+1)/(nq+2−q) increases to 1/q = 1+Δ. |
+| §9 Queyranne–Schulz edit; new credits | **VERIFIED** | "later 2+2ln2+ε" dropped, with the reason. |
+| Code: `HNode.q0`, `h_cp` 'opt0', `h_lower_bounds`/`h_constants` preload_aware, `thmD_constant`, `kicked_res` | **VERIFIED** | They match the doc. `test_CROSS_CHECK_author_new_code_matches_ours` compares them with my independent implementations on 80 random instances: q0, LB_cp, LB⁰, β_cp⁰, the unrestricted constant, completion times, and the per-event kicked reservation all agree exactly. |
+| Unrelated changes in the diff | **none found** | The doc, code and test diffs (e17bd7f → c46b893) only touch the fixed items, the new verification-status table and cross-references to `stochastic_theory_ext.md`, which is out of scope. In the tests, the κ/margin instances were refactored into helpers (`_kappa_stress`, `_margin_stress`) without changing them. |
+
+### Ruling (a): R6 for DAG tasks
+
+**The author is right, and my e17bd7f recommendation ("for DAGs it should read 'at most α·(held hits)'") was false.** I reproduced both instances with my own simulator (`run_P`) and my own hold rule: hold the child's parent context ρ when the parent completes, LRU, lowest class; preload only returned pieces. Results are identical with and without preload, since there are no pieces (`test_reverify_R6_DAG_saving_both_directions_and_negative`):
+
+- **Saving larger than α·hits.** α = 1/4, m = 1, plan (q1, X1) → a (q2, X1, ρ1, lag 1) and → b (q3, X1, ρ2, lag 0).
+  - Evict-always completes at 5. Holding completes at 4: b's shorter prefill ends at 2, before a arrives at 9/4, so a no longer preempts it.
+  - Saving 1 > α·hits = 3/4.
+- **Negative saving.** α = 1/4, m = 2, plan (q3, X1) → a (q2, X1, lag 1), → b (q1, X2, ρ1, lag 1), → c (q3, X3, lag 0).
+  - Evict-always completes at 6. Holding completes at 25/4.
+  - I traced it by hand: b's earlier decode start preempts c's decode one quarter earlier, and c ends later.
+  - Saving −1/4 < 0.
+
+Lemma D1 holds in all runs. So for DAG tasks there is no identity and no inequality in either direction. Only the safety statement (Thm D with any keep/preload policy) survives, which is what the revised doc says (l. 714–728). Together with my earlier instance (saving 1/2 < α·hits = 1), all three directions are confirmed.
+
+### Ruling (b): the unrestricted constant min{1+β_cp⁰, 2+β}
+
+**Accepted.**
+1. The assumption is stated explicitly (§4, l. 370–373): a piece-free node receives its q tokens at availability, and piece i's tokens arrive when piece i returns.
+2. It is a valid modelling assumption, and it is exactly what makes (L1⁰) with q⁰ = q sound for piece-free nodes. The doc also says what to do if some tokens arrive early (shrink q⁰), and q⁰ ≡ 0 is always valid.
+3. Both branches are proved; I checked each step:
+   - the node-wise branch, with CP′ ≤ (1+β_cp⁰)CP⁰;
+   - the additive branch (mine), with CP′ ≤ CP⁰ + (1+β)σ_J.
+4. Each branch is an upper bound on the same quantity, so their minimum is too.
+5. The result is never weaker than my (2+β) + 2max(1+β,θ), and it is strictly better when fan-out prompts are short relative to decodes. Calibrated, the author's form gives 2.80 versus 4.50 for my additive form alone with unbounded memory, and 10.01 versus 14.43 at M′ = 64k.
+
+Remaining caveat: the wording suggestion for multi-parent nodes in the q⁰ row of the verdict table above.
+
+### Mutation testing of the revised author tests
+
+All 21 mutations make the targeted test fail (script kept outside the repo):
+
+| Test | Mutations |
+|---|---|
+| thmA_two_approx, thmA_parallel | Smith × 0.8 |
+| thmB_online | γ := 0 (two variants), LB2 × 1.1 |
+| thmD_pathwise | Z′ without κ; area term normalized by M′ |
+| thmD_ratio | constants (0, −1/2, 1/2); β 10% low |
+| R5a | e/(e−1) → 1.4 |
+| COUNTEREXAMPLE_L1 | LB⁰ := LB_cp |
+| thmD_unrestricted | LB⁰ := LB_cp; β_cp⁰ := β_cp; β_cp⁰ halved; constant without the min; 'opt0' using q instead of q⁰ |
+| lemmaD0_tight_family | no kicks; M′ + 1 |
+| COUNTEREXAMPLE_R6 | hold ignored |
+| thmA_tight | FIFO order instead of WSPT |
+| R0c | P with m = 1 |
+
+So every test whose weakness I reported for e17bd7f now catches its mutation.
+
+One observation: in `test_thmD_ratio_against_engine_lower_bounds`, the new assertion `max(r_cp) == bcp` (and the same for β, θ) recomputes the same formula as `h_constants`, so it is a consistency check rather than evidence. The substantive new checks are Z′_K ≤ max(1+β,θ)(σ_K + A_K/M) and CP′ ≤ (1+β_cp)CP^opt.
+
+### Still open or not checked
+- Whether the *restricted* constant also holds against the unrestricted benchmark. The doc correctly calls this open (l. 529–531 and §10.4). No exact engine optimum has been computed.
+- The full texts of Megow–Schulz (ORL 2004) and Schulz–Skutella (J. Sched. 2002), as noted in the Thm A tightness row.
+- `stochastic_theory_ext.md` and its verification, which are out of scope for this re-verification.

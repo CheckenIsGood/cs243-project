@@ -12,7 +12,7 @@ CONF=$(python -c "import json,sys; c=json.load(open('scripts/cd_configs.json'))[
 pkill -f "vllm serv[e].*--port $PORT" || true
 for _ in $(seq 30); do pgrep -f "vllm serv[e].*--port $PORT" > /dev/null || break; sleep 2; done
 log=results/logs/serve_gpu${GPU}.log
-CUDA_VISIBLE_DEVICES=$GPU CODESIGN="$CONF" KV_BLOCKS="$KVB" PORT=$PORT PREFIX_CACHE=1 MAXLEN=16384 MAXSEQS=256 SCHED=priority \
+CUDA_VISIBLE_DEVICES=$GPU CODESIGN="$CONF" KV_BLOCKS="$KVB" PORT=$PORT PREFIX_CACHE=1 MAXLEN=${MAXLEN:-16384} MAXSEQS=256 SCHED=priority \
   EXTRA_ARGS="--scheduler-cls codesign.vllm_sched.CodesignScheduler" nohup scripts/serve_model.sh > "$log" 2>&1 &
 spid=$!
 for _ in $(seq 120); do

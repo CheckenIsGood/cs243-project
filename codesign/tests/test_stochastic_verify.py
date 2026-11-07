@@ -498,3 +498,177 @@ def test_R7_index_vs_probe_exact():
 
 def test_R7_hold_only_numbers():
     assert hold_only_value_lb(12, 2, 1) == 42 and Q(42, 12) == Q(7, 2)
+
+
+# =========================================================================== Re-verification of commit c46b893
+from codesign.stochastic_verify import (  # noqa: E402
+    beta_cp0, cp_path, d0_tight_family, lb0_q0, r6_isolated, release_order_np, schulz_skutella,
+    thmD_unrestricted_constant,
+)
+
+
+def test_reverify_thmA_tight_schulz_skutella_own_code():
+    """The constant 2 of Thm A is tight: own simulator + own exact one-machine DP."""
+    ts = schulz_skutella(3, 6)
+    alg = exp_cost(ts, 1, wspt_rank(ts))
+    assert alg == 228 and release_order_np(ts) == 160 == opt_clair_exp(ts)
+    prev = Q(0)
+    for n in (5, 20, 150):
+        ts = schulz_skutella(n)
+        r = exp_cost(ts, 1, wspt_rank(ts)) / release_order_np(ts)
+        assert prev < r < 2
+        prev = r
+    assert prev > Q(198, 100)
+    # structure behind the family: the release-order schedule never idles (each job ends after the next release),
+    # and P-WSPT preempts each job j < n with exactly 1/n left at r_{j+1}
+    n = 7
+    ts = schulz_skutella(n)
+    t = Q(0)
+    for j, J in enumerate(ts[:-1]):
+        t = max(t, J.r) + J.sizes[0][0][0]
+        assert t >= ts[j + 1].r
+        assert J.sizes[0][0][0] - (ts[j + 1].r - J.r) == Q(1, n)
+
+
+def test_reverify_thmA_smith_sharpness_numbers():
+    ts = [Job(Q(0), Q(1), (point(1),)) for _ in range(20)]
+    W = [Q(1)] * 20
+    assert exp_cost(ts, 1, wspt_rank(ts)) == 210 == smith_value([J.w for J in ts], W)
+    assert exp_cost(ts, 2, wspt_rank(ts)) == 110 and smith_value([J.w for J in ts], W) / 2 == 105
+
+
+def test_reverify_lb2_sharpness_numbers():
+    R = Job(Q(0), Q(1), (law((1, Q(9, 10)), (40, Q(1, 10))),))
+    ts = [R] * 8
+    lst = exp_cost(ts, 2, list(range(8)), preemptive=False)  # a non-preemptive policy: >= OPT_np
+    l2, g = lb2(ts, 2)
+    l2_gamma0, g0 = lb2(ts, 2, Delta=Q(0))
+    assert g < 0 and g0 == 0 and l2 <= lst < l2_gamma0 == Q(392, 5)
+    assert round(float(lst), 2) == 69.97
+    ts = [Job(Q(0), Q(1), (point(1),)) for _ in range(11)]
+    assert lb2(ts, 1)[0] == Q(121, 2) and opt_np(ts, 1) == 66 < Q(11, 10) * Q(121, 2)
+
+
+def test_reverify_R6_DAG_saving_both_directions_and_negative():
+    """Author's c46b893 instances, reproduced with OUR simulator and hold rule: saving > alpha*hits, and < 0."""
+    T = Agent(Q(0), Q(1), (Node(1, 1), Node(2, 1, rho=1), Node(3, 1, rho=2)), ((0, 1, point(1)), (0, 2, point(0))))
+    lag = [{("arc", 0): Q(1), ("arc", 1): Q(0)}]
+    for pre in (False, True):
+        c0, c1, ah = r6_isolated(T, lag, Q(1, 4), 1, pre)
+        assert (c0, c1, ah) == (5, 4, Q(3, 4)) and c0 - c1 > ah
+    T = Agent(Q(0), Q(1), (Node(3, 1), Node(2, 1), Node(1, 2, rho=1), Node(3, 3)),
+              ((0, 1, point(1)), (0, 2, point(1)), (0, 3, point(0))))
+    lag = [{("arc", 0): Q(1), ("arc", 1): Q(1), ("arc", 2): Q(0)}]
+    for pre in (False, True):
+        c0, c1, ah = r6_isolated(T, lag, Q(1, 4), 2, pre)
+        assert (c0, c1, ah) == (6, Q(25, 4), Q(1, 4)) and c0 - c1 < 0
+
+
+def test_reverify_lemmaD0_tight_family_own_simulator():
+    for L, s in ((10, 3), (50, 20), (200, 50)):
+        ev, rec, ly, Lm, ok = d0_tight_family(L, s)
+        assert ok and Lm == L and len(ev) == 1
+        _, arr, kicked, n_arr = ev[0]
+        assert n_arr == 1 and arr == ly and kicked == ly + L - 1 < ly + L
+        assert rec > ly + L - 3
+
+
+def test_reverify_thmD_unrestricted_both_branches():
+    """E[ALG] <= min{(1+beta_cp0) LB0, LB0 + (1+beta) sum w sigma} + max(1+beta, theta) S, plus the two pathwise
+    step-1 forms, on random instances (chains and DAGs) with our simulator; any keep/preload configuration."""
+    rng = random.Random(77)
+    nchk = 0
+    for _ in range(150):
+        ts = [rand_agent(rng, dag=True) for _ in range(rng.randint(1, 3))]
+        L = Lmax(ts)
+        Mp = rng.choice([None, L + rng.randint(1, L // 2 + 1), L + rng.randint(L // 2, 3 * L)])
+        cfg = Eng(alpha=Q(1, rng.choice([1, 4])), a=Q(1), m=rng.choice([1, 2]), Mp=Mp,
+                  hold=rng.random() < 0.5, preload=rng.random() < 0.5)
+        base = Eng(cfg.alpha, cfg.a, cfg.m, Mp)
+        rk = rank_P(ts, base)
+        alg = sum(pr * sum(T.w * c for T, c in zip(ts, run_P(ts, lag, cfg, rk)["C"])) for pr, lag in agent_reals(ts))
+        lb0 = lb0_q0(ts, cfg)
+        _, S = engine_lower_bounds(ts, cfg)
+        _, b, th = thmD_constants(ts, cfg)
+        bc0 = beta_cp0(ts, cfg)
+        wsig = sum(T.w * sum(cfg.alpha * nd.q + cfg.c * nd.X for nd in T.nodes) for T in ts)
+        second = (1 + b) * S if Mp is None else max(1 + b, th) * S
+        assert alg <= min((1 + bc0) * lb0, lb0 + (1 + b) * wsig) + second
+        assert lb0_q0(ts, cfg, zero=True) <= lb0 <= engine_lower_bounds(ts, cfg)[0]
+        for pr, lag in itertools.islice(agent_reals(ts), 2):
+            for t, T in enumerate(ts):
+                cpa = cp_path(T, lag[t], lambda nd: cfg.alpha * (nd.q + nd.rho) + cfg.a * nd.X)
+                cp0 = cp_path(T, lag[t], lambda nd: cfg.alpha * nd.q0 + (cfg.a + cfg.c) * nd.X)
+                cpz = cp_path(T, lag[t], lambda nd: (cfg.a + cfg.c) * nd.X)
+                sig = sum(cfg.alpha * nd.q + cfg.c * nd.X for nd in T.nodes)
+                assert cpa <= (1 + bc0) * cp0 and cpa <= cpz + (1 + b) * sig
+                nchk += 1
+    assert nchk > 200
+
+
+def test_reverify_thmD_unrestricted_algebra_z3():
+    al, a, c, q, q0, rho, X, b0, bt, kap = z3.Reals("al a c q q0 rho X b0 bt kap")
+    hyp = [al > 0, a > 0, c > 0, q0 >= 0, q >= q0, rho >= 0, X >= 1, b0 * (al * q0 + a * X) >= al * (q + rho - q0)]
+    assert proved(al * (q + rho) + a * X <= (1 + b0) * (al * q0 + (a + c) * X), *hyp)
+    hyp2 = [al > 0, a > 0, c > 0, q >= 0, rho >= 0, X >= 1, kap >= 0, bt * (al * q + c * X) >= al * rho + kap]
+    assert proved(al * (q + rho) + a * X <= (a + c) * X + (1 + bt) * (al * q + c * X), *hyp2)
+    # final constants: LB0 <= OPT, sum w sigma <= OPT, S <= 2 OPT
+    o, lb0, ws, S, mx = z3.Reals("o lb0 ws S mx")
+    h3 = [lb0 <= o, ws <= o, S <= 2 * o, o > 0, b0 >= 0, bt >= 0, lb0 >= 0, ws >= 0, S >= 0, mx >= 1]
+    lhs = z3.If((1 + b0) * lb0 <= lb0 + (1 + bt) * ws, (1 + b0) * lb0, lb0 + (1 + bt) * ws) + mx * S
+    assert proved(lhs <= (z3.If(1 + b0 <= 2 + bt, 1 + b0, 2 + bt) + 2 * mx) * o, *h3)
+
+
+def test_reverify_calibrated_unrestricted_table():
+    al, a = Q("0.000114"), Q("0.027767")
+    TK = Agent(Q(0), Q(1), (Node(q=2000, X=200), Node(q=1500, X=300, rho=2200, pieces=((point(1), 750), (point(1), 750)))),
+               ((0, 1, point(1)),))
+    cinf, c64 = Eng(al, a, 51), Eng(al, a, 51, Mp=64000)
+    assert round(float(beta_cp0([TK], cinf)), 4) == 0.0506
+    assert round(float(thmD_unrestricted_constant([TK], cinf)), 2) == 2.80
+    assert round(float(thmD_unrestricted_constant([TK], c64)), 2) == 10.01
+    bcp, b, th = thmD_constants([TK], c64)
+    assert round(float(1 + bcp + 2 * max(1 + b, th)), 2) == 9.99
+
+
+def test_reverify_L1_counterexample_numbers_in_new_doc():
+    sched, lb, lb_fix, _, T, cfg = preload_L1_counterexample()
+    assert (sched, lb, lb_fix) == (16, 26, 15)
+    assert beta_cp0([T], cfg) == 11 and thmD_constants([T], cfg)[0] == 0
+    lag = [{("arc", 0): Q(0), ("pc", 1, 0): Q(0), ("pc", 1, 1): Q(10)}]
+    assert run_P([T], lag, cfg)["C"][0] == 24
+
+
+def test_CROSS_CHECK_author_new_code_matches_ours():
+    """CROSS-CHECK (imports the author's module): q0, h_lower_bounds(preload_aware), h_constants(preload_aware),
+    thmD_constant and sim_hybrid's kicked_res agree with our independent implementations."""
+    import codesign.stochastic_theory as ST
+
+    def conv(ts):
+        return [ST.HTask(T.r, T.w, tuple(ST.HNode(q=nd.q, X=nd.X, rho=nd.rho,
+                                                  pieces=tuple((ST.dist(*d), tk) for d, tk in nd.pieces))
+                                         for nd in T.nodes), tuple((u, v, ST.dist(*d)) for u, v, d in T.arcs))
+                for T in ts]
+
+    def convlag(lag):
+        return [{(("a", k[1]) if k[0] == "arc" else ("p", (k[1], k[2]))): v for k, v in l.items()} for l in lag]
+
+    rng = random.Random(88)
+    for _ in range(80):
+        ts = [rand_agent(rng, dag=True) for _ in range(rng.randint(1, 3))]
+        L = Lmax(ts)
+        Mp = rng.choice([None, L + rng.randint(1, L // 2 + 1), L + rng.randint(L // 2, 3 * L)])
+        cfg = Eng(alpha=Q(1, 4), a=Q(1), m=rng.choice([1, 2, 3]), Mp=Mp)
+        A = conv(ts)
+        acfg = ST.HCfg(alpha=cfg.alpha, a=cfg.a, m=cfg.m, Mp=Mp)
+        assert [n.q0 for T in A for n in T.nodes] == [n.q0 for T in ts for n in T.nodes]
+        assert ST.h_lower_bounds(A, acfg, preload_aware=True)[0] == lb0_q0(ts, cfg)
+        assert ST.h_lower_bounds(A, acfg)[0] == engine_lower_bounds(ts, cfg)[0]
+        assert ST.h_constants(A, acfg, True)[0] == beta_cp0(ts, cfg)
+        assert ST.thmD_constant(A, acfg, True) == thmD_unrestricted_constant(ts, cfg)
+        rk = rank_P(ts, cfg)
+        for pr, lag in itertools.islice(agent_reals(ts), 2):
+            mine = run_P(ts, lag, cfg, rk)
+            theirs = ST.sim_hybrid(A, convlag(lag), acfg, order=rk)
+            assert mine["C"] == theirs["C"]
+            assert [k for (_, _, k, _) in mine["kick_events"]] == theirs["kicked_res"]

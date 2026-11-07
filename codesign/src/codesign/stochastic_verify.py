@@ -646,6 +646,12 @@ class Node:
     def lp(self):
         return self.rho + self.q + self.X
 
+    @property
+    def q0(self):
+        """Prompt tokens that must be prefilled after availability under the doc's arrival assumption (c46b893
+        Section 4): all q for a piece-free node, none (conservatively) for a node with fan-out pieces."""
+        return 0 if self.pieces else self.q
+
 
 @dataclass(frozen=True)
 class Agent:
@@ -1081,6 +1087,67 @@ def r6_dag_counterexample():
     c1 = Eng(alpha=Q(1, 4), a=Q(1), m=2, hold=True, preload=True)
     s0, s1 = run_P([T], lag, c0), run_P([T], lag, c1)
     return s0["C"][0] - s1["C"][0], c0.alpha * s1["held_hits"], T, lag
+
+
+# ------------------------------------------------------------------- re-verification helpers (c46b893)
+def beta_cp0(tasks, cfg):
+    """beta_cp0 = max_y alpha(q + rho - q0)/(alpha q0 + a X)."""
+    return max(cfg.alpha * (nd.q + nd.rho - nd.q0) / (cfg.alpha * nd.q0 + cfg.a * nd.X) for T in tasks for nd in T.nodes)
+
+
+def lb0_q0(tasks, cfg, zero=False):
+    """LB0 = sum w (r + E CP0), node length alpha q0 + (a+c) X (zero=True: q0 := 0 for every node)."""
+    tot = Q(0)
+    for pr, lag in agent_reals(tasks):
+        for t, T in enumerate(tasks):
+            f = lambda nd: (cfg.a + cfg.c) * nd.X + (0 if zero else cfg.alpha * nd.q0)
+            tot += pr * T.w * (T.r + cp_path(T, lag[t], f))
+    return tot
+
+
+def thmD_unrestricted_constant(tasks, cfg):
+    """min(1 + beta_cp0, 2 + beta) + (1 + beta) [unbounded memory] or + 2 max(1+beta, theta) [bounded]."""
+    _, b, th = thmD_constants(tasks, cfg)
+    first = min(1 + beta_cp0(tasks, cfg), 2 + b)
+    return first + ((1 + b) if cfg.Mp is None else 2 * max(1 + b, th))
+
+
+def schulz_skutella(n, scale=1):
+    """w_j = 1, p_j = n - j/n, r_j = j n - j(j+1)/(2n), j = 0..n (one machine, single-node tasks, no lags)."""
+    return [Job(Q(scale) * (j * n - Q(j * (j + 1), 2 * n)), Q(1), (point(Q(scale) * (n - Q(j, n))),))
+            for j in range(n + 1)]
+
+
+def release_order_np(tasks):
+    """Non-preemptive schedule in release order on one machine (a feasible schedule, so >= OPT)."""
+    t = tot = Q(0)
+    for J in sorted(tasks, key=lambda J: J.r):
+        t = max(t, J.r) + J.sizes[0][0][0]
+        tot += J.w * t
+    return tot
+
+
+def d0_tight_family(L, s):
+    """z1 (l+ = L) decoding, z2 (l+ = s) released at L - s, top-priority y (l+ = s+1) at L - 3/2, M' = L + s,
+    alpha = 1/1000, a = 1, m = 3, priority order (y, z1, z2). Returns (kick_events, recompute tokens, ly, Lmax)."""
+    z1 = Agent(Q(0), Q(1), (Node(q=1, X=L - 1),))
+    z2 = Agent(Q(L - s), Q(1), (Node(q=1, X=s - 1),))
+    y = Agent(Q(L) - Q(3, 2), Q(10**6), (Node(q=1, X=s),))
+    ts = [z1, z2, y]
+    cfg = Eng(alpha=Q(1, 1000), a=Q(1), m=3, Mp=L + s)
+    r = run_P(ts, [{}, {}, {}], cfg, rank=[2, 0, 1])
+    bound_ok = all(c <= b for c, b in zip(r["C"], lemmaD1_rhs(ts, [{}, {}, {}], cfg, [2, 0, 1])))
+    return r["kick_events"], r["kicked_tokens"], y.nodes[0].lp, Lmax(ts), bound_ok
+
+
+def r6_isolated(T, lag, alpha, m, preload):
+    """(evict-always completion, hold(+preload) completion, alpha * held hits) for one isolated task."""
+    c0 = Eng(alpha=alpha, a=Q(1), m=m)
+    c1 = Eng(alpha=alpha, a=Q(1), m=m, hold=True, preload=preload)
+    s0, s1 = run_P([T], lag, c0), run_P([T], lag, c1)
+    rk = rank_P([T], c0)
+    assert all(c <= b for c, b in zip(s1["C"], lemmaD1_rhs([T], lag, c0, rk)))
+    return s0["C"][0], s1["C"][0], alpha * s1["held_hits"]
 
 
 # ============================================================================================ C. keep / evict

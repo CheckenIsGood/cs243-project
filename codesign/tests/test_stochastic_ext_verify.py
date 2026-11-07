@@ -24,6 +24,10 @@ from codesign.stochastic_ext_verify import (
     sqrt2_instance, start, strip, task_law_W, thmDR_parts, thmG_check, thmH_parts, thmP_parts, total_work,
     v_matrix, wval, zproc,
 )
+from codesign.stochastic_ext_verify import (  # section I (re-verification, c46b893)
+    beta_cp0_h, calib_unrestricted, cp_alg_mem, cp_opt_mem, hyb_cp, hyb_cp0, propK0_parts, thmDR0_parts,
+    thmH0_parts,
+)
 
 G = gittins_dinkelbach  # cross-checked against gittins_brute in the first test
 
@@ -450,16 +454,150 @@ def test_mutations_author_tests_detect_false_claims():
                     [(T, "lambda_D", lambda ts, cfg: Fr(99, 100) * old(ts, cfg))])
 
 
-def test_mutations_author_lemmaP1_test_is_weak():
-    """The author's random-law test of Lemma P1 still PASSES with the FALSE constant 0.76/(1+Delta) (false by the
-    58/77 witness), so it does not certify the constant; only the proof (verified above) does."""
+def test_mutations_author_lemmaP1_checker_not_mutation_protected():
+    """Re-verification (c46b893), ruling (b). The false constants 0.76 and 0.80 are now REFUTED by the author's
+    new witness test (computed directly, independently of the checker). But the checker emin_lower_bound_holds is
+    still not mutation-protected: it is called by exactly one test, and that test passes when the checker's constant
+    is raised to 0.76 or 0.80, so the whole suite passes under that mutation. Feeding the 58/77 witness through
+    the checker (assert emin_lower_bound_holds(X, Y)) would catch any constant > 58/77."""
+    import inspect
     T, X = _author_tests()
     from codesign.stochastic_theory import cv2
+    callers = [n for n, f in inspect.getmembers(T, inspect.isfunction)
+               if n.startswith("test_") and "emin_lower_bound_holds" in inspect.getsource(f)]
+    assert callers == ["test_lemmaP1_emin_lower_bound_and_witness"]
+    assert "emin_lower_bound_holds(" not in inspect.getsource(T.test_lemmaP1_witness_58_77_refutes_larger_constants)
+    with open(X.__file__) as fh:
+        assert fh.read().count("emin_lower_bound_holds") == 1  # only its definition: no library-internal use
+    T.test_lemmaP1_witness_58_77_refutes_larger_constants()  # the claim c* <= 58/77 < 0.76 is certified
 
-    def false_p1(d1, d2):
-        A, B = X.normalize(d1), X.normalize(d2)
-        return X.emin(A, B) >= Fr(76, 100) / (1 + max(cv2(A), cv2(B)))
+    def checker(c):
+        def h(d1, d2):
+            A, B = X.normalize(d1), X.normalize(d2)
+            D, e = max(cv2(A), cv2(B)), X.emin(A, B)
+            return e >= c / (1 + D) and (e >= 1 or (1 - e) ** 2 <= D / 2)
+        return h
 
-    assert not _detects(T.test_lemmaP1_emin_lower_bound_and_witness, [(T, "emin_lower_bound_holds", false_p1)])
     X_, Y_ = law((0, Fr(19, 20)), (20, Fr(1, 20))), law((Fr(1, 2), Fr(76, 77)), (39, Fr(1, 77)))
-    assert not false_p1(X_, Y_)  # ...although the claim it encodes is false
+    assert X.emin_lower_bound_holds(X_, Y_)  # the recommended extra assertion passes on the true checker
+    for c in (Fr(76, 100), Fr(80, 100)):
+        patch = [(T, "emin_lower_bound_holds", checker(c)), (X, "emin_lower_bound_holds", checker(c))]
+        assert not _detects(T.test_lemmaP1_emin_lower_bound_and_witness, patch)  # suite misses the mutation
+        assert not checker(c)(X_, Y_)  # ...and the recommended assertion would catch it
+    assert _detects(T.test_lemmaP1_emin_lower_bound_and_witness,
+                    [(T, "emin_lower_bound_holds", checker(Fr(1))), (X, "emin_lower_bound_holds", checker(Fr(1)))])
+
+
+def test_mutations_author_new_tests_c46b893():
+    """The new or tightened author tests fail under false mutations: Thm G m = 2 (Gitt_1 shifted), Thm H beta_cp
+    instance (beta_cp scaled), preload-aware calibration (beta_cp0 -> beta_cp, q0 -> q, min branch -> 2 + beta)."""
+    T, X = _author_tests()
+    import codesign.stochastic_theory as B
+    og, oc, ohc = X.gittins_single_value, X.thmH_constants, B.h_constants
+    ew = lambda ts: sum(t.w * X.expected_work(t) for t in ts)
+    assert _detects(T.test_thmG_parallel_machines_consistency,
+                    [(T, "gittins_single_value", lambda ts, index=X.gittins: (og(ts, index) + ew(ts)) / 2)])
+    for f in (Fr(0), Fr(4, 5)):
+        assert _detects(T.test_thmH_ratio_domination_and_gittins_optimality,
+                        [(T, "thmH_constants", lambda ts, cfg, pa=False, f=f: (f * oc(ts, cfg, pa)[0], oc(ts, cfg, pa)[1]))])
+    t = T.test_preload_aware_constants_H_DR_K
+    assert _detects(t, [(X, "thmH_constants", lambda ts, cfg, pa=False: oc(ts, cfg, False))])
+    assert _detects(t, [(X, "h_constants", lambda ts, cfg, pa=False: ohc(ts, cfg, False))])
+    assert _detects(t, [(X.RNode, "q0", property(lambda s: s.q))])
+    assert _detects(t, [(X.CapNode, "q0", property(lambda s: s.q))])
+    assert _detects(t, [(X, "thmD_new_constant", lambda ts, cfg, pa=False: (
+        (lambda bcp, b, _: (2 + b if pa else 1 + bcp) + 2 * X.lambda_D(ts, cfg))(*ohc(ts, cfg, pa))))])
+
+    def dr_no_small_delta_branch(tasks, cfg, preload_aware=False):
+        EZ, sl, _ = X.dr_expected_sizes(tasks, cfg)
+        Es = [sum(v * p for v, p in l) for l in sl]
+        D, lamE = max(B.cv2(l) for l in sl), max(z / e for z, e in zip(EZ, Es))
+        cs = [ohc(h, cfg, preload_aware) for _, h, _ in X.dr_realizations(tasks)]
+        bcp, b = max(c[0] for c in cs), max(c[1] for c in cs)
+        first = min(1 + bcp, 2 + b) if preload_aware else 1 + bcp
+        return float(first) + 2 * float(lamE) * 27 / 16 * (1 + float(D))
+
+    assert _detects(t, [(X, "thmDR_constant", dr_no_small_delta_branch)])
+    # the author's unrestricted constants equal this module's independent recomputation EXACTLY
+    mine, au = calib_unrestricted(), X.calibrated_constants(True)
+    assert all(mine[k] == au[k] for k in au)
+
+
+# ===================================================== re-verification (c46b893): unrestricted benchmark ((L1) fix)
+def _rt_fanout(rng):
+    T = _rt(rng)
+    return RT(T.r, T.w, tuple(RN(nd.q, nd.law, nd.rho, nd.ctx, fanout=(i > 0 and rng.random() < 0.7))
+                              for i, nd in enumerate(T.nodes)), T.lags)
+
+
+def test_unrestricted_thmH_chain_with_fanout_nodes():
+    """Thm H, unrestricted benchmark: node-wise CP_alg <= (1+beta_cp0) CP0 on every realization; E ALG <=
+    (1+beta_cp0) LB0 + Gitt_1(Z') - sum w E Z' <= (1+beta_cp0+lambda) max(LB0, Gitt_1(s)); LB0 <= LB_cp. Necessity:
+    with the restricted beta_cp against LB0 the bound FAILS on a fan-out instance ((L1) counterexample shape)."""
+    rng = random.Random(31)
+    fo = 0
+    for _ in range(30):
+        ts = [_rt_fanout(rng) for _ in range(rng.choice([1, 2, 2]))]
+        fo += any(nd.fanout for T in ts for nd in T.nodes)
+        cfg = Cfg(Fr(rng.choice([1, 2]), 4), Fr(1), rng.choice([1, 2]))
+        R = thmH0_parts(ts, cfg, G)
+        assert R["nodewise"] and R["lb0"] <= R["lb_cp"] and R["bcp0"] >= R["bcp"]
+        mid = (1 + R["bcp0"]) * R["lb0"] + R["gz"] - R["ez"]
+        assert R["alg"] <= mid and R["gz"] <= R["lam"] * R["gs"]
+        assert mid <= (1 + R["bcp0"] + R["lam"]) * max(R["lb0"], R["gs"])
+    assert fo > 15
+    T = RT(Fr(0), Fr(1), (RN(1, point(1)), RN(10, point(1), fanout=True)), (point(0),))
+    cfg = Cfg(Fr(1, 4), Fr(1), 1)
+    R = thmH0_parts([T], cfg, G)
+    assert R["bcp"] == 0 and R["bcp0"] == Fr(5, 2) and R["gz"] == R["ez"]
+    assert (1 + R["bcp"]) * R["lb0"] == Fr(17, 4) < R["alg"] == Fr(19, 4) <= (1 + R["bcp0"]) * R["lb0"] and R["lb_cp"] == Fr(27, 4)
+
+
+def test_unrestricted_propK_and_DR_both_branches():
+    """Prop K and Thm DR, unrestricted benchmark, final prompt a fan-out: on every realization CP_alg <= (1+bcp0)CP0
+    (node-wise) and CP_alg <= CP0 + (1+beta) sigma (additive, (L0)); hence E ALG <= min{(1+bcp0) LB0, LB0 + (1+beta)
+    sum w E sigma} + (lambda_D S or Smith(E Zbar)). The 2 + beta branch is strictly better on some instances."""
+    rng = random.Random(41)
+    binds = 0
+    for _ in range(60):
+        ts = []
+        for _ in range(rng.randint(1, 3)):
+            q1, X1, q2, X2 = rng.randint(1, 9), rng.randint(1, 4), rng.randint(1, 9), rng.randint(1, 3)
+            rho = q1 + X1
+            ts.append(MT(Fr(rng.randint(0, 3)), Fr(rng.randint(1, 4)),
+                         (MN(q1, 0, X1, q1 + X1), MN(q2, rho, X2, rho + q2 + X2, True)), (Fr(rng.randint(0, 3)),)))
+        L = max(nd.res for T in ts for nd in T.nodes)
+        cfg = Cfg(Fr(rng.choice([1, 4]), 4), Fr(1), rng.choice([1, 2]), Fr(L + rng.randint(L // 2, 3 * L)))
+        P = propK0_parts(ts, cfg)
+        assert P["path"] and P["nodewise"] and P["additive"]
+        assert P["alg"] <= P["bound0"] and P["lb0"] <= P["lb_cp"] and P["wsig"] <= P["lb_cp"]
+        binds += 2 + P["beta0"] < 1 + P["bcp0"]
+    assert binds > 3
+    binds = 0
+    for _ in range(30):
+        ts = [DRT(Fr(rng.randint(0, 3)), Fr(rng.randint(1, 4)),
+                  (DRN(rng.randint(1, 8), _rl(rng, 1, 4, rng.choice([1, 2]))),
+                   DRN(rng.randint(1, 8), _rl(rng, 1, 3, rng.choice([1, 2])), rng.randint(0, 8), True)),
+                  (_rl(rng, 0, 3, rng.choice([1, 2])),)) for _ in range(rng.randint(2, 3))]
+        Lc = max(nd.rho + nd.q + nd.cap for T in ts for nd in T.nodes)
+        cfg = Cfg(Fr(rng.choice([1, 4]), 4), Fr(1), rng.choice([1, 2]), Fr(Lc + rng.randint(Lc // 3, 2 * Lc)))
+        R = thmDR0_parts(ts, cfg)
+        assert R["path_ok"] and R["nodewise"] and R["additive"]
+        assert R["alg"] <= R["bound0"] and R["lb0"] <= R["lb_cp"] and R["ewsig"] <= R["lb_cp"]
+        binds += 2 + R["beta0"] < 1 + R["bcp0"]
+    assert binds > 3
+
+
+def test_unrestricted_calibrated_constants_recomputed():
+    """2.54 / 2.74 (Thm H), 8.74 (DR), 4.84 / 5.82 / 6.78 (Prop K at 32k/64k/128k), 10.01 (old Thm D form); the
+    min{1 + beta_cp0, 2 + beta} takes the 1 + beta_cp0 branch at the calibrated values (1.05 vs 5.48; 1.15 vs 8.07)."""
+    u = calib_unrestricted()
+    al, a = Fr("0.000114"), Fr("0.027767")
+    assert u["H_det"] - calib_thmH(False)[2] == al * 3700 / (a * 300) - al * 2200 / (al * 1500 + a * 300)
+    assert u["H_rand"] - calib_thmH(True)[2] == al * 3700 / (a * 100) - al * 2200 / (al * 1500 + a * 100)
+    assert Fr(254, 100) < u["H_det"] < Fr(255, 100) and Fr(274, 100) < u["H_rand"] < Fr(275, 100)
+    assert 8.742 < u["DR"] < 8.743 and abs(u["DR"] - (calib_DR()["total"] - float(al * 2200 / (al * 1500 + a * 100))
+                                                       + float(al * 3700 / (a * 100)))) < 1e-12
+    assert Fr(484, 100) < u["K32"] < Fr(485, 100) and Fr(582, 100) < u["K64"] < Fr(583, 100)
+    assert Fr(677, 100) < u["K128"] < Fr(678, 100) and Fr(1000, 100) < u["D64"] < Fr(1001, 100)
+    assert u["first_K64"] < u["two_plus_beta_K64"] and u["first_DR"] < u["two_plus_beta_DR"]

@@ -20,6 +20,8 @@ Sections
   F. Thm A lower bounds: the sqrt(2) family and the (known) Schulz-Skutella / Megow-Schulz family -> 2
   G. calibrated constants (Thm H, Thm DR, Prop K)
   H. adversarial searches
+  I. re-verification (c46b893): unrestricted benchmark ((L1) fix) for Thm H / DR / Prop K: q0, LB0, beta_cp0,
+     the additive 2 + beta branch, and the unrestricted calibrated constants
 """
 
 from __future__ import annotations
@@ -662,6 +664,11 @@ class RN:
     law: tuple
     rho: int = 0
     ctx: int = 0  # recompute ctx * parent's realized X extra tokens
+    fanout: bool = False  # prompt = staggered pieces an unrestricted benchmark may prefill early (q0 = 0)
+
+    @property
+    def q0(self):
+        return 0 if self.fanout else self.q
 
 
 @dataclass(frozen=True)
@@ -804,6 +811,11 @@ class MN:
     rho: int
     X: int
     res: int
+    fanout: bool = False
+
+    @property
+    def q0(self):
+        return 0 if self.fanout else self.q
 
 
 @dataclass(frozen=True)
@@ -924,6 +936,7 @@ class DRN:
     q: int
     law: tuple
     rho: int = 0
+    fanout: bool = False
 
     @property
     def cap(self):
@@ -952,7 +965,7 @@ def dr_realize(tasks):
         for s, (v, p) in zip(slots, combo):
             pr *= p
             (X if s[0] == 0 else L)[s[1]][s[2]] = (int(v) if s[0] == 0 else v)
-        yield pr, [MT(T.r, T.w, tuple(MN(nd.q, nd.rho, X[t][i], nd.rho + nd.q + nd.cap)
+        yield pr, [MT(T.r, T.w, tuple(MN(nd.q, nd.rho, X[t][i], nd.rho + nd.q + nd.cap, nd.fanout)
                                       for i, nd in enumerate(T.nodes)), tuple(L[t]))
                    for t, T in enumerate(tasks)]
 
@@ -1178,3 +1191,137 @@ def hill_climb_emin(seed, iters=4000, k=3):
     Y = law(*[(Fr(x).limit_denominator(10**6), Fr(p).limit_denominator(10**6)) for x, p in zip(ys, qs)])
     ok, e, D = lemmaP1_holds(X, Y)
     return X, Y, (1 + D) * e, ok
+
+
+# ========================================== I. unrestricted benchmark ((L1) fix): q0, LB0, beta_cp0, 2 + beta branch
+def hyb_cp0(T: RT, Xs, Ds, cfg):
+    """Preload-aware critical path of any engine schedule: alpha q0 + (a + c) X per node, plus lags."""
+    return sum(cfg.alpha * nd.q0 + (cfg.a + cfg.c) * x for nd, x in zip(T.nodes, Xs)) + sum(Ds, Fr(0))
+
+
+def beta_cp0_h(tasks, cfg):
+    """beta_cp0 = max alpha (q + rho_eff - q0) / (alpha q0 + a X_min), rho_eff = rho + ctx * (parent's max X)."""
+    b = Fr(0)
+    for T in tasks:
+        pxmax = 0
+        for nd in T.nodes:
+            xmin = min(v for v, _ in nd.law)
+            b = max(b, cfg.alpha * (nd.q + nd.rho + nd.ctx * pxmax - nd.q0) / (cfg.alpha * nd.q0 + cfg.a * xmin))
+            pxmax = int(max(v for v, _ in nd.law))
+    return b
+
+
+def thmH0_parts(tasks, cfg, G=gittins_brute):
+    """Thm H against the unrestricted benchmark. Returns the chain pieces and whether the node-wise inequality
+    CP_alg <= (1 + beta_cp0) CP0 held on every realization."""
+    P = thmH_parts(tasks, cfg, G)
+    bcp0 = beta_cp0_h(tasks, cfg)
+    lb0 = Fr(0)
+    nodewise = True
+    for T in tasks:
+        e = Fr(0)
+        for pr, Xs, Ds in rt_realizations([T]):
+            c0 = hyb_cp0(T, Xs[0], Ds[0], cfg)
+            nodewise &= hyb_cp(T, Xs[0], Ds[0], cfg, True) <= (1 + bcp0) * c0
+            e += pr * c0
+        lb0 += T.w * (T.r + e)
+    P.update(bcp0=bcp0, lb0=lb0, nodewise=nodewise)
+    return P
+
+
+def cp_opt0_mem(T: MT, cfg):
+    return sum(cfg.alpha * nd.q0 + (cfg.a + cfg.c) * nd.X for nd in T.nodes) + sum(T.lags, Fr(0))
+
+
+def sigma_mem(T: MT, cfg):
+    return sum(cfg.alpha * nd.q + cfg.c * nd.X for nd in T.nodes)
+
+
+def beta_cp0_mem(T: MT, cfg):
+    return max(cfg.alpha * (nd.q + nd.rho - nd.q0) / (cfg.alpha * nd.q0 + cfg.a * nd.X) for nd in T.nodes)
+
+
+def beta_D_mem(tasks, cfg, Lmax):
+    """[base] Thm D beta = max (alpha rho + kappa) / (alpha q + c X), kappa = alpha (l+ + Lmax)."""
+    return max((cfg.alpha * nd.rho + cfg.alpha * (nd.res + Lmax)) / (cfg.alpha * nd.q + cfg.c * nd.X)
+               for T in tasks for nd in T.nodes)
+
+
+def unrestricted_cp_checks(R, cfg, Lmax):
+    """Per realization: (i) CP_alg <= (1 + beta_cp0) CP0 and (ii) CP_alg <= CP0 + (1 + beta) sigma, task by task.
+    Returns (ok_i, ok_ii, bcp0, beta)."""
+    bcp0 = max(beta_cp0_mem(T, cfg) for T in R)
+    beta = beta_D_mem(R, cfg, Lmax)
+    ok1 = all(cp_alg_mem(T, cfg) <= (1 + bcp0) * cp_opt0_mem(T, cfg) for T in R)
+    ok2 = all(cp_alg_mem(T, cfg) <= cp_opt0_mem(T, cfg) + (1 + beta) * sigma_mem(T, cfg) for T in R)
+    return ok1, ok2, bcp0, beta
+
+
+def propK0_parts(tasks, cfg):
+    """Prop K chain against the unrestricted benchmark (deterministic counts):
+    ALG <= sum w r + min{(1+bcp0) sum w CP0, sum w CP0 + (1+beta) sum w sigma} + lambda_D Smith(sigma + A/M)."""
+    P = propK_parts(tasks, cfg)
+    Lmax = mem_Lmax(tasks)
+    ok1, ok2, bcp0, beta = unrestricted_cp_checks(tasks, cfg, Lmax)
+    wr = sum(T.w * T.r for T in tasks)
+    cp0 = sum(T.w * cp_opt0_mem(T, cfg) for T in tasks)
+    wsig = sum(T.w * sigma_mem(T, cfg) for T in tasks)
+    bound = wr + min((1 + bcp0) * cp0, cp0 + (1 + beta) * wsig) + P["lamD"] * P["smithS"]
+    P.update(bcp0=bcp0, beta0=beta, lb0=wr + cp0, wsig=wsig, bound0=bound, nodewise=ok1, additive=ok2)
+    return P
+
+
+def thmDR0_parts(tasks, cfg):
+    """Thm DR chain against the unrestricted benchmark (random X, cap reservations): E ALG <= sum w r +
+    min{(1+bcp0) E sum w CP0, E sum w CP0 + (1+beta) sum w E sigma} + Smith(E Zbar); bcp0, beta maxed over
+    realizations; node-wise and additive inequalities checked on every realization."""
+    P = thmDR_parts(tasks, cfg)
+    reals = list(dr_realize(tasks))
+    Lmax = mem_Lmax(reals[0][1])
+    ok1 = ok2 = True
+    bcp0 = beta = Fr(0)
+    ecp0 = ewsig = Fr(0)
+    for pr, R in reals:
+        a1, a2, b0, be = unrestricted_cp_checks(R, cfg, Lmax)
+        ok1 &= a1
+        ok2 &= a2
+        bcp0, beta = max(bcp0, b0), max(beta, be)
+        ecp0 += pr * sum(T.w * (T.r + cp_opt0_mem(T, cfg)) for T in R)
+        ewsig += pr * sum(T.w * sigma_mem(T, cfg) for T in R)
+    # E sum w (r + CP_alg) <= min{(1+bcp0)(E sum w CP0), E sum w CP0 + (1+beta) E sum w sigma} (r folded into CP0)
+    wr = sum(T.w * T.r for T in tasks)
+    bound = min(wr + (1 + bcp0) * (ecp0 - wr), ecp0 + (1 + beta) * ewsig) + P["smithEZ"]
+    P.update(bcp0=bcp0, beta0=beta, lb0=ecp0, ewsig=ewsig, bound0=bound, nodewise=ok1, additive=ok2)
+    return P
+
+
+def calib_unrestricted():
+    """Unrestricted calibrated constants, final prompt a fan-out (q0 = 0): H_det, H_rand, DR (M' = 64k), K32, K64,
+    K128 (Prop K) and D64 (old Thm D form). Closed forms from this module's own pieces."""
+    out = {}
+    for key, rnd in (("H_det", False), ("H_rand", True)):
+        _, lam, _ = calib_thmH(rnd)
+        xf_min = 100 if rnd else 300
+        bcp0 = ALPHA * (1500 + 2200 - 0) / (ALPHA * 0 + A_DEC * xf_min)
+        out[key] = 1 + bcp0 + lam
+    T = MT(Fr(0), Fr(1), (MN(2000, 0, 200, 2200), MN(1500, 2200, 300, 4000, True)), (Fr(1),))
+    for Mp in (32000, 64000, 128000):
+        cfg = Cfg(ALPHA, A_DEC, M51, Fr(Mp))
+        P = propK0_parts([T], cfg)
+        first = min(1 + P["bcp0"], 2 + P["beta0"])
+        out[f"K{Mp // 1000}"] = first + 2 * P["lamD"]
+        if Mp == 64000:
+            out["D64"] = first + 2 * max(1 + P["beta"], P["theta"])
+            out["first_K64"], out["two_plus_beta_K64"] = 1 + P["bcp0"], 2 + P["beta0"]
+    d = calib_DR(64000)
+    cfg = Cfg(ALPHA, A_DEC, M51, Fr(64000))
+    TD = DRT(Fr(0), Fr(1), (DRN(2000, law((50, 1), (200, 2), (800, 1))),
+                            DRN(1500, law((100, 1), (300, 2), (1200, 1)), 2200, True)), (point(1),))
+    reals = list(dr_realize([TD]))
+    Lmax = mem_Lmax(reals[0][1])
+    bcp0 = max(beta_cp0_mem(R[0], cfg) for _, R in reals)
+    beta = max(beta_D_mem(R, cfg, Lmax) for _, R in reals)
+    first = min(1 + bcp0, 2 + beta)
+    out["DR"] = float(first) + 2 * float(d["lamE"]) * d["rho"]
+    out["first_DR"], out["two_plus_beta_DR"] = 1 + bcp0, 2 + beta
+    return out

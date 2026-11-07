@@ -1,13 +1,120 @@
 {
-  "C0a": {"engine": {}, "rule": "fcfs", "preload": "off", "ttl_q": 0},
-  "C0b": {"engine": {}, "rule": "zprime", "preload": "off", "ttl_q": 0},
-  "C1":  {"engine": {"hold": "pin", "pin_boost": true}, "rule": "task_fcfs", "preload": "off", "ttl_q": 0.9},
-  "C2":  {"engine": {"admission": "prefix"}, "rule": "plas", "preload": "off", "ttl_q": 0},
-  "C2p": {"engine": {"admission": "prefix"}, "rule": "area", "preload": "off", "ttl_q": 0},
-  "C3":  {"engine": {"admission": "prefix"}, "rule": "zprime", "preload": "off", "ttl_q": 0},
-  "C3f": {"engine": {"admission": "prefix"}, "rule": "task_fcfs", "preload": "off", "ttl_q": 0},
-  "C3p": {"engine": {"admission": "prefix", "prefill_top1": true}, "rule": "zprime", "preload": "off", "ttl_q": 0},
-  "C4":  {"engine": {"admission": "prefix", "preload_gate": true, "protect_queued": true}, "rule": "zprime", "preload": "low", "ttl_q": 0},
-  "C5":  {"engine": {"admission": "prefix", "preload_gate": true, "protect_queued": true, "hold": "ttl"}, "rule": "zprime", "preload": "low", "ttl_q": 0.9},
-  "C5pin": {"engine": {"admission": "prefix", "preload_gate": true, "protect_queued": true, "hold": "pin"}, "rule": "zprime", "preload": "low", "ttl_q": 0.9}
+ "C0a": {
+  "engine": {},
+  "rule": "fcfs",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C0b": {
+  "engine": {},
+  "rule": "zprime",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C1": {
+  "engine": {
+   "hold": "pin",
+   "pin_boost": true
+  },
+  "rule": "task_fcfs",
+  "preload": "off",
+  "ttl_q": 0.9
+ },
+ "C2": {
+  "engine": {
+   "admission": "prefix"
+  },
+  "rule": "plas",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C2p": {
+  "engine": {
+   "admission": "prefix"
+  },
+  "rule": "area",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C3": {
+  "engine": {
+   "admission": "prefix"
+  },
+  "rule": "zprime",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C3f": {
+  "engine": {
+   "admission": "prefix"
+  },
+  "rule": "task_fcfs",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C3p": {
+  "engine": {
+   "admission": "prefix",
+   "prefill_top1": true
+  },
+  "rule": "zprime",
+  "preload": "off",
+  "ttl_q": 0
+ },
+ "C4": {
+  "engine": {
+   "admission": "prefix",
+   "preload_gate": true,
+   "protect_queued": true
+  },
+  "rule": "zprime",
+  "preload": "low",
+  "ttl_q": 0
+ },
+ "C5": {
+  "engine": {
+   "admission": "prefix",
+   "preload_gate": true,
+   "protect_queued": true,
+   "hold": "ttl"
+  },
+  "rule": "zprime",
+  "preload": "low",
+  "ttl_q": 0.9
+ },
+ "C5pin": {
+  "engine": {
+   "admission": "prefix",
+   "preload_gate": true,
+   "protect_queued": true,
+   "hold": "pin"
+  },
+  "rule": "zprime",
+  "preload": "low",
+  "ttl_q": 0.9
+ },
+ "C6": {
+  "engine": {
+   "hold": "ttl",
+   "protect_queued": true
+  },
+  "rule": "zprime",
+  "preload": "off",
+  "ttl_q": 0.9
+ },
+ "C7": {
+  "engine": {
+   "hold": "pin",
+   "pin_boost": true
+  },
+  "rule": "zprime",
+  "preload": "off",
+  "ttl_q": 0.9
+ },
+ "C1s": {
+  "engine": {},
+  "rule": "task_fcfs",
+  "preload": "off",
+  "ttl_q": 0
+ }
 }
