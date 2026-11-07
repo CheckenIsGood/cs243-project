@@ -73,8 +73,8 @@ code `src/codesign/stochastic_ext_verify.py`). This revision applies the fixes.
   kicks at quantum boundaries.
 - Gittins for **DAG** tasks with parallel LLM nodes.
 - Quantile reservation with overflow.
-- The exact pair constant: the worst case lies in [77/58, 27/16]·(1+Δ) ≈ [1.33, 1.69]·(1+Δ) (lower end witnessed at
-  Δ = 19, the verifier's 58/77 witness).
+- The exact pair constant. As a supremum over Δ, sup_Δ ρ(Δ)/(1+Δ) lies in [77/58, 27/16] ≈ [1.33, 1.69]. The lower
+  end is witnessed only at Δ = 19 (the verifier's 58/77 witness), not for every Δ; for example, ρ(0) = 1.
 - The multiplicative form of R0b.
 
 ---
@@ -328,8 +328,13 @@ by LB⁰ (q⁰ = 0 for such nodes) and β_cp by β_cp⁰ = max α(q + ρ − q�
   E[ALG] ≤ (1+β_cp⁰)·LB⁰ + Gitt₁(Z′) − Σ w E Z′ ≤ (1 + β_cp⁰ + λ)·OPT_na.
 
 H1, H2 and H3 are unaffected (H1's simulation also covers early piece prefill, since pieces exist only after the
-parent finishes). [X: preload_aware_constants_H_DR_K] checks this inequality exactly on 30 random instances with
-fan-out final nodes.
+parent finishes). [X: preload_aware_constants_H_DR_K] checks this inequality exactly on 50 random instances with
+fan-out nodes, in two families chosen so that each term binds on some instance:
+- long fan-out prompts, where dropping β_cp⁰ fails;
+- five tasks competing for the decoders, where dropping Gitt₁(Z′) − ΣwEZ′ fails.
+
+It also checks an instance where the 2+β branch of min(1+β_cp⁰, 2+β) binds (Prop K with memory: β_cp⁰ = 11,
+β = 7).
 
 **Checks.**
 - [X: thmH_pathwise_bound_hybrid_random_outputs]: H2 on more than 1500 checks.

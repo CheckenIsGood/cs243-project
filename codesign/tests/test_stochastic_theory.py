@@ -349,6 +349,7 @@ def test_thmD_ratio_against_engine_lower_bounds():
         r_cp = [cfg.alpha * n.rho / (cfg.alpha * n.q + cfg.a * n.X) for T in ts for n in T.nodes]
         r_b = [(cfg.alpha * n.rho + kap(n)) / (cfg.alpha * n.q + cfg.c * n.X) for T in ts for n in T.nodes]
         r_th = [F(n.l_plus, n.l_minus) for T in ts for n in T.nodes] if Mp is not None else [F(1)]
+        # consistency check only (recomputes h_constants' formula); the evidence is the Z'/CP' inequalities below
         assert max(r_cp) == bcp and max(r_b) == b and max(r_th) == th
         Z, S, A = h_sizes(ts, cfg)
         assert all(z <= max(1 + b, th) * (x + y) for z, x, y in zip(Z, S, A))
@@ -441,7 +442,12 @@ def test_thmD_unrestricted_benchmark_corrected_bound():
     alg = sim_hybrid([T], lag, cfg)["C"][0]
     lb0 = h_lower_bounds([T], cfg, preload_aware=True)[0]
     assert alg == 24 and h_constants([T], cfg)[0] == 0 and h_constants([T], cfg, True)[0] == 11
-    assert (1 + 0) * lb0 < h_cp(T, lag[0], cfg, "alg") == alg <= (1 + 11) * lb0
+    assert (1 + 0) * lb0 < h_cp(T, lag[0], cfg, "alg") == alg <= (1 + 11) * lb0  # step 1 needs beta_cp0, not beta_cp
+    _, S = h_lower_bounds([T], cfg)
+    wsig = sum(cfg.alpha * n.q + cfg.c * n.X for n in T.nodes)
+    assert S == 14 and wsig == 14 and alg <= (1 + 0) * lb0 + 1 * S == 29  # full restricted-form inequality still holds
+    assert thmD_constant([T], cfg, preload_aware=True) == 3  # the 2 + beta branch binds: min(12, 2) + 1
+    assert alg <= lb0 + (1 + 0) * wsig + (1 + 0) * S == 43
     al, a = F("0.000114"), F("0.027767")
     TK = HTask(F(0), F(1), (HNode(q=2000, X=200), HNode(q=1500, X=300, rho=2200, pieces=((det(1), 750), (det(1), 750)))),
                ((0, 1, det(1)),))

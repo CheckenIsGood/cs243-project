@@ -371,6 +371,9 @@ Assumptions:
   are the tool's output). A node with pieces receives piece i's tokens when piece i returns, and becomes
   available when the last piece returns. Prompt tokens are appended after the parent context, so no token of v
   can be prefilled before v's parent completes.
+- A node with several parents whose inputs come from different parents' tools, returning at different times,
+  must be modelled **with pieces** (one piece per input), not as a piece-free node. Otherwise q⁰ = q would
+  wrongly forbid prefilling the inputs that return early.
 
 ### 4.1 Lower bounds on OPT_na (engine, speed 1, memory M)
 
@@ -522,8 +525,15 @@ min(1+β_cp⁰, 2+β) + (1+β) ≤ 3 + 2β.
 Both are valid, so the minimum is. ∎
 
 The node-wise form is sharper when prompts are short relative to decodes. The additive form is sharper when a
-fan-out node's prompt dominates its decode, since β_cp⁰ then blows up. On the (L1) counterexample, β_cp = 0 but
-β_cp⁰ = 11. There ALG = 24 > (1+β_cp)·LB⁰ = 15, so the restricted constant cannot simply be reused against LB⁰.
+fan-out node's prompt dominates its decode, since β_cp⁰ then blows up.
+
+On the (L1) counterexample (unbounded memory), β_cp = 0, β_cp⁰ = 11 and β = 0:
+- The critical-path term gives ALG = CP′ = 24 > (1+β_cp)·LB⁰ = 15. So **step 1 cannot use β_cp against CP⁰**; it
+  needs β_cp⁰, or the additive form.
+- This does not refute the restricted constant. The full restricted-form inequality still holds there:
+  (1+β_cp)·LB⁰ + max(1+β,θ)·S = 15 + 14 = 29 ≥ 24.
+- Here the 2+β branch of the min binds: min(1+11, 2+0) + (1+0) = 3, and LB⁰ + (1+β)Σwσ + (1+β)·S =
+  15 + 14 + 14 = 43 ≥ 24.
 
 Whether the restricted constant (1+β_cp) + 2max(1+β,θ) still holds against the unrestricted OPT_na is **open**.
 The proof does not cover it. No exact engine optimum was computed, by us or by the verifier, so it is not
@@ -880,8 +890,10 @@ tightness of Thm A's 2 (Schulz–Skutella, Megow–Schulz).
 7. **Token counts known at release** (H-prompt). The index Z′_J is computed at release, so Thm D needs every node's
    q, ρ and X at release, including the token counts of tool outputs that have not returned yet. Knowing them only
    at node availability is **not** enough. That would be the realistic assumption, but the policy and proof do not
-   cover it. Upper bounds known at release (reserved as X̄, q̄) restore the theorem with those bounds in Z′ and in
-   the constants.
+   cover it. We **expect** that upper bounds q̄, X̄ known at release (reserved and used in Z′) restore the theorem.
+   This is not proved: the constants β_cp, β, θ and the lower bounds would have to be redefined as ratios of
+   reserved to actual token counts. For random X with a reserved cap, Thm DR in the extension is the proved
+   version.
 8. **Lag independence.** Thm A/D need lags independent of the schedule. Lags that depend on load (shared tool
    back-ends) are not covered.
 9. **R5b uses linearized prices.** The exact queueing objective is not an LP.

@@ -290,22 +290,56 @@ def test_preload_aware_constants_H_DR_K():
     assert F(998, 100) < old["D64"] < F(999, 100) and F(1000, 100) < new["D64"] < F(1001, 100)
     al, a = F("0.000114"), F("0.027767")
     assert new["H_rand"] - old["H_rand"] == al * 3700 / (a * 100) - al * 2200 / (al * 1500 + a * 100)
-    rng = random.Random(21)
-    for _ in range(30):
+    def fam_prompt(rng):  # long fan-out final prompts: the beta_cp0 term binds
         ts = []
         for _ in range(2):
-            T = _rtask_h(rng)
-            nodes = tuple(RNode(n.q, n.law, n.rho, n.ctx, fanout=(i > 0)) for i, n in enumerate(T.nodes))
-            ts.append(RTask(T.r, T.w, nodes, T.lags))
-        cfg = HCfg(alpha=F(1, 4), a=F(1), m=rng.choice([1, 2]))
-        alg = sum(prob * sum(T.w * c for T, c in zip(ts, sim_gittins_hybrid(ts, Xs, Ds, cfg)))
-                  for prob, Xs, Ds in r_realizations(ts))
-        Z = strip_release_and_lags([z_process(T, cfg) for T in ts])
-        gz, ez = gittins_single_value(Z), sum(T.w * expected_work(z) for T, z in zip(ts, Z))
-        bcp0, _ = thmH_constants(ts, cfg, preload_aware=True)
-        lb0 = lb_cp_h(ts, cfg, preload_aware=True)
-        assert lb0 <= lb_cp_h(ts, cfg)
-        assert alg <= (1 + bcp0) * lb0 + gz - ez
+            plan = RNode(q=rng.randint(1, 3), law=_rd(rng, 1, 3, rng.choice([1, 2])))
+            fin = RNode(q=rng.randint(4, 12), law=_rd(rng, 1, 3, rng.choice([1, 2])), rho=rng.randint(0, 8),
+                        ctx=rng.choice([0, 1]), fanout=True)
+            ts.append(RTask(F(0), F(rng.randint(1, 3)), (plan, fin), (_rd(rng, 0, 2, rng.choice([1, 2])),)))
+        return ts, HCfg(alpha=F(1, 4), a=F(1), m=rng.choice([1, 2]))
+
+    def fam_load(rng):  # five short-prompt tasks competing for the decoders: Gitt_1(Z') - sum w E Z' binds
+        ts = []
+        for k in range(5):
+            nodes = [RNode(q=1, law=_rd(rng, 2, 5, 2 if k < 2 else 1))]
+            if k == 0:
+                nodes.append(RNode(q=1, law=_rd(rng, 2, 5, 1), fanout=True))
+            ts.append(RTask(F(0), F(rng.randint(1, 3)), tuple(nodes),
+                            tuple(det(rng.randint(0, 2)) for _ in range(len(nodes) - 1))))
+        return ts, HCfg(alpha=F(1, 4), a=F(1), m=rng.choice([1, 2]))
+
+    rng = random.Random(21)
+    need_bcp = need_gitt = 0
+    for fam, n in ((fam_prompt, 30), (fam_load, 20)):
+        for _ in range(n):
+            ts, cfg = fam(rng)
+            alg = sum(prob * sum(T.w * c for T, c in zip(ts, sim_gittins_hybrid(ts, Xs, Ds, cfg)))
+                      for prob, Xs, Ds in r_realizations(ts))
+            Z = strip_release_and_lags([z_process(T, cfg) for T in ts])
+            gz, ez = gittins_single_value(Z), sum(T.w * expected_work(z) for T, z in zip(ts, Z))
+            bcp0, _ = thmH_constants(ts, cfg, preload_aware=True)
+            lb0 = lb_cp_h(ts, cfg, preload_aware=True)
+            assert lb0 <= lb_cp_h(ts, cfg)
+            assert alg <= (1 + bcp0) * lb0 + gz - ez
+            need_bcp += alg > lb0 + gz - ez  # dropping beta_cp0 would fail
+            need_gitt += alg > (1 + bcp0) * lb0  # dropping the interference term would fail
+    assert need_bcp > 0 and need_gitt > 0
+    # an instance where the 2 + beta branch of min(1 + beta_cp0, 2 + beta) binds (Prop K, bounded memory): the
+    # (L1) counterexample, whose fan-out prompt dominates its decode (beta_cp0 = 11 > 1 + beta = 8)
+    T = HTask(F(0), F(1), (HNode(q=1, X=1), HNode(q=11, X=1, rho=0, pieces=((det(0), 10), (det(10), 1)))),
+              ((0, 1, det(0)),))
+    cfg = HCfg(alpha=F(1), a=F(1), m=1, Mp=100)
+    lag = [{("a", 0): F(0), ("p", (1, 0)): F(0), ("p", (1, 1)): F(10)}]
+    bcp0, b, _ = h_constants([T], cfg, preload_aware=True)
+    lD = lambda_D([T], cfg)
+    assert (bcp0, b) == (11, 7)
+    assert thmD_new_constant([T], cfg, preload_aware=True) == 2 + b + 2 * lD < 1 + bcp0 + 2 * lD
+    alg = sim_hybrid([T], lag, cfg)["C"][0]
+    lb0, S = h_lower_bounds([T], cfg, preload_aware=True)
+    wsig = sum(cfg.alpha * n.q + cfg.c * n.X for n in T.nodes)
+    assert alg == 24 and alg <= lb0 + (1 + b) * wsig + lD * S
+    assert h_cp(T, lag[0], cfg, "alg") <= h_cp(T, lag[0], cfg, "opt0") + (1 + b) * wsig
 
 
 # ===================================================================== Prop K (sharper Thm D constant)
@@ -415,6 +449,7 @@ def test_lemmaP1_witness_58_77_refutes_larger_constants():
     c = (1 + 19) * emin(X, Y)
     assert c == F(58, 77) and F(16, 27) <= c < F(76, 100) < F(80, 100)
     assert F(16, 27) / (1 + 19) <= emin(X, Y)  # the proved bound holds on the witness
+    assert emin_lower_bound_holds(X, Y)  # the checker accepts it; a checker constant above 58/77 would fail here
 
 
 def test_thmP_index_policy_vs_clairvoyant_m1():
