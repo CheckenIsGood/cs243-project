@@ -116,5 +116,33 @@
   "rule": "task_fcfs",
   "preload": "off",
   "ttl_q": 0
+ },
+ "A1": {
+  "engine": {},
+  "rule": "zprime_age",
+  "preload": "off",
+  "ttl_q": 0,
+  "kappa": 1
+ },
+ "A2": {
+  "engine": {},
+  "rule": "zprime_age",
+  "preload": "off",
+  "ttl_q": 0,
+  "kappa": 2
+ },
+ "A4": {
+  "engine": {},
+  "rule": "zprime_age",
+  "preload": "off",
+  "ttl_q": 0,
+  "kappa": 4
+ },
+ "A8": {
+  "engine": {},
+  "rule": "zprime_age",
+  "preload": "off",
+  "ttl_q": 0,
+  "kappa": 8
  }
 }

@@ -65,3 +65,24 @@ def test_preloads_are_tagged_lowest():
 
 def test_delay_quantile():
     assert 2.9 <= delay_quantile(DELAY, 0.5) <= 3.1 and 9 <= delay_quantile(DELAY, 0.9) <= 9.6
+
+
+def test_aging_priority_bounds_overtaking():
+    """zprime_age: priority r_J + kappa*Z'_J. A later task K overtakes J only if r_K - r_J < kappa*(Z'_J - Z'_K)."""
+    from deadline_agent.multiagent import AgentTask as AT
+    t = fixture_task()[0]
+    big, small = AT("big#0", t, 0.0, 1e3, "react", 6), AT("small#1", t, 0.0, 1e3, "fanout", 2)
+    for kappa in (0.0, 1.0, 4.0):
+        lay = CodesignLayer("zprime_age", M_tokens=16_000, L_max=8184, kappa=kappa)
+        zb, zs = lay.task_index(big), lay.task_index(small)
+        window = kappa * (zb - zs)
+        for dt in (0.0, 0.5 * window, window + 1.0, 30.0):
+            small.arrival = big.arrival + dt
+            pb = lay.request_extra(big, "s", "step", [], 48, None)["priority"]
+            ps = lay.request_extra(small, "s", "plan", [], 128, None)["priority"]
+            assert (ps < pb) == (dt < window), (kappa, dt)  # overtakes exactly inside the window
+    # kappa = 0 is task FCFS; large kappa reproduces the zprime order
+    lay = CodesignLayer("zprime_age", M_tokens=16_000, L_max=8184, kappa=1e6)
+    small.arrival = big.arrival + 100.0
+    assert lay.request_extra(small, "s", "plan", [], 128, None)["priority"] < \
+        lay.request_extra(big, "s", "step", [], 48, None)["priority"]

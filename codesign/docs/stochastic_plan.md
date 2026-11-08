@@ -213,6 +213,12 @@ pressure: the dual price, or the σ̂ feedback already built in `preload_control
 
 E1 is small and has the clearest prediction, so it comes first.
 
+**Status (2026-11-07).** In `vllm_sched.py` the numbering follows `vllm_codesign_spec.md`, not this table. Done
+there: prefix admission with kicks (this table's E3), queued-prefix protection (E1 here), the prefill budget
+(E4 here), soft TTL eviction (a TTL-only version of E2 here) and the preload class. Not implemented: the value
+index for the free-block queue (E2 here, beyond TTL), swap through the offload connector (E5 here), and the
+online memory price. Results and next steps: `experiment_plan.md` §6–7.
+
 ## 5. Experiments
 
 - **Simulator:** extend M4 (`controller_theory.simulate_vllm`) into the R-model, with policies A/B, to check every

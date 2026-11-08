@@ -9,6 +9,9 @@ sets the vLLM priority (lower runs first) and the `vllm_xargs` the CodesignSched
   task_fcfs  Continuum-like: task (program) arrival time
   plas       Autellix-like: attained service of the task so far (program-level least attained service)
   area       LAMPS-like: this request's memory-time area (prompt + max_tokens) x max_tokens x step time
+  zprime_age ours with aging: r_J + kappa * Z'_J / w_J (task arrival plus kappa times the index). Fixed per task.
+             A task can be overtaken only by tasks that arrive less than kappa * Z'_J / w_J after it, so no task
+             waits forever; kappa = 0 is task FCFS, kappa -> infinity is zprime.
 
 Times are seconds; VLLMBackend converts priority to integer milliseconds.
 """
@@ -20,7 +23,7 @@ from dataclasses import dataclass, field
 from deadline_agent.clock import now
 from deadline_agent.model_client import messages_tokens
 
-RULES = ("fcfs", "zprime", "task_fcfs", "plas", "area")
+RULES = ("fcfs", "zprime", "task_fcfs", "plas", "area", "zprime_age")
 
 
 @dataclass
@@ -77,6 +80,7 @@ class CodesignLayer:
     L_max: int = 0
     ttl: float = 0.0  # cd_ttl for requests followed by a tool wait (0 = none)
     tag_preloads: bool = True
+    kappa: float = 0.0  # zprime_age: seconds of priority per second of index
     service: dict = field(default_factory=dict)  # task -> attained service (s), for plas
     index: dict = field(default_factory=dict)  # task -> Z'/w, for zprime
 
@@ -109,6 +113,8 @@ class CodesignLayer:
             prio = self.task_index(at)
         elif self.rule == "task_fcfs":
             prio = at.arrival
+        elif self.rule == "zprime_age":
+            prio = at.arrival + self.kappa * self.task_index(at)
         elif self.rule == "plas":
             prio = self.service.get(at.task_id, 0.0)
         else:  # area

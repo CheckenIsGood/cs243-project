@@ -78,7 +78,7 @@ async def server_kv_tokens(base_url) -> int | None:
 
 
 async def one_run(tasks, policy, rate, cfg, seed, a, c, base_url, model, delay, preload, kv_tokens=None, ctrl_out=None,
-                  rule=None, ttl_q=0.0, alpha=1.14e-4):
+                  rule=None, ttl_q=0.0, alpha=1.14e-4, kappa=0.0):
     async with httpx.AsyncClient(base_url=base_url, timeout=30) as cl:
         (await cl.post("/reset_prefix_cache")).raise_for_status()
     controller = None
@@ -97,7 +97,7 @@ async def one_run(tasks, policy, rate, cfg, seed, a, c, base_url, model, delay, 
         widths = cfg["width"] if isinstance(cfg["width"], dict) else {s: [cfg["width"]] for s in cfg["shapes"]}
         L_max = max(rho + q + X for s in cfg["shapes"] for w in widths[s] for rho, q, X in task_nodes(s, w, e))
         layer = CodesignLayer(rule, Calib(a, c, alpha), e, M, L_max,
-                              ttl=delay_quantile(delay, ttl_q) if ttl_q > 0 else 0.0)
+                              ttl=delay_quantile(delay, ttl_q) if ttl_q > 0 else 0.0, kappa=kappa)
     wl = make_workload(tasks, rate, cfg["duration"], seed, shapes=tuple(cfg["shapes"]), width=cfg["width"],
                        slack=tuple(cfg["slack"]),
                        isolated={"fanout": cfg["isolated_fanout"], "orchestrator": cfg["isolated_orchestrator"]})
@@ -131,6 +131,8 @@ def main():
                     help="server KV capacity for the ctrl mode (default: read from the server's /metrics)")
     ap.add_argument("--rules", nargs="+", choices=RULES, default=None,
                     help="co-design priority rules (codesign.client); one run per rule, policy fixed to fcfs")
+    ap.add_argument("--age-kappa", type=float, default=0.0,
+                    help="zprime_age rule: priority = task arrival + kappa * Z'/w (seconds)")
     ap.add_argument("--ttl-quantile", type=float, default=0.0,
                     help="cd_ttl = this quantile of the tool-delay law, on calls followed by a tool wait (0 = none)")
     ap.add_argument("--tag", default="", help="suffix for output file names (e.g. the engine config)")
@@ -161,7 +163,7 @@ def main():
                 res, wall = asyncio.run(one_run(tasks, "fcfs" if rule else pol, rate, cfg, a.seed, prof["a"],
                                                 prof["c"], a.base_url, a.model, delay, PRELOAD_MODES[pm], a.kv_tokens,
                                                 out / f"ctrl_r{rate:g}_{pol}.json", rule=rule,
-                                                ttl_q=a.ttl_quantile))
+                                                ttl_q=a.ttl_quantile, kappa=a.age_kappa))
                 rows = []
                 for r in res:
                     g = gold[r.task_id.split("#")[0]]

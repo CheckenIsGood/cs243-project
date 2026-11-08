@@ -5,7 +5,7 @@ set -uo pipefail
 cd /workspace/codesign
 OUT=results/sweep
 RATE=${RATE:-1.0} DUR=${DUR:-90}
-ROUNDS=("C0a C1 C3 C6" "C0b C2 C5 C7")
+IFS=";" read -ra ROUNDS <<< "${ROUNDS:-C0a C1 C3 C6;C0b C2 C5 C7}"
 SEEDS=(${SEEDS:-2 3 4 5 6})
 CAPS=(${CAPS:-1000 1500 1875 full})
 for seed in "${SEEDS[@]}"; do

@@ -228,15 +228,35 @@ admission (our Autellix-like run above used our preemptive admission), and a LAM
 ranking~\cite{shahout2024lamps}. This decides whether the memory and recomputation terms of
 Eq.~\eqref{eq:z} matter in practice.
 
-\textbf{2. Protect the longest tasks.} Ranking by cost makes the largest tasks wait: six-turn ReAct agents (17\% of tasks)
-finish 14\% later than under vLLM, and the 90th percentile does not improve (106\,s versus 101\,s). We will add aging (the index
-improves while a task waits) and check that the guarantee survives it.
+\textbf{2. Protect the longest tasks with aging.} Ranking by cost makes the largest tasks wait: six-turn ReAct
+agents (17\% of tasks) finish 14\% later than under vLLM, and their 90th percentile does not improve (106\,s
+versus 101\,s). Each of their seven model calls queues at the lowest priority, so the delay compounds. Our fix
+gives task $J$ the priority $r_J + \kappa Z'_J/w_J$ (smaller is served first): its arrival time plus $\kappa$
+times its index. This interpolates between task-level FCFS ($\kappa = 0$) and the index ($\kappa \to \infty$),
+and it bounds overtaking: a task $K$ that arrives after $J$ is served first only if it arrives less than
+$\kappa(Z'_J/w_J - Z'_K/w_K) \le \kappa Z'_J/w_J$ seconds later, so no task waits behind an endless stream of
+smaller ones. The priority is still fixed at arrival, which Theorem~2's proof needs. The rule is implemented in
+the client layer and unit-tested; at 16k memory $Z'$ ranges from 3.1\,s (two-search fan-out) to 16.7\,s
+(six-turn ReAct), so $\kappa$ between 1 and 8 protects a long task from tasks arriving up to 2 minutes after it.
+We will pick $\kappa$ on the testbed and extend Theorem~2 to this priority using the overtaking bound.
 
-\textbf{3. Close the theory--practice gap on admission.} Theorem~2 needs admission in strict priority order with
-preemption. In our ablations this rule costs latency on long tasks, because preempted requests recompute their
-context; likewise, keeping KV across tool waits added no measurable gain on top of the index at this scale. We
-will look for an admission rule without preemption that keeps a constant-factor guarantee, and test KV retention
-with longer contexts and tool outputs, where recomputation is expensive.
+\textbf{3. Engine changes: make preemption and KV retention cheap.} Theorem~2 needs admission in strict priority
+order with preemption. In our ablations this rule costs latency on long tasks, because vLLM preempts a request
+by discarding its KV cache and recomputing the whole context later; likewise, keeping KV across tool waits gave
+no measurable gain on top of the index at this scale. The scheduler plug-in already has the rules the proof uses
+(Section~\ref{sec:design}), but not the following changes to vLLM's memory management, which target these two
+costs. (a)~\emph{Preempt by swapping, not recomputing:} route preemptions and tool-wait evictions through
+vLLM's KV-offload connector, which copies blocks to CPU memory, so resuming costs a PCIe transfer instead of a
+prefill of the full context. Our model treats a swap as a fixed delay, like a tool call, so we expect the
+analysis to carry over. (b)~\emph{Evict by value, not recency:} vLLM evicts cached blocks least-recently-used. We
+will order them by the recomputation they save per unit of memory and expected remaining wait, using the
+tool-delay distribution the client attaches to each request; today we only move blocks whose time-to-live has
+expired to the front. Theorem~2 allows any eviction order among kept blocks, so this cannot break the guarantee.
+(c)~\emph{A price for memory:} our keep-or-evict analysis for many agents sharing memory is a threshold rule
+with a memory price; we will estimate that price online from the free-memory fraction, so agents keep KV across
+tool waits only when memory is plentiful. We will also look for an admission rule that needs no preemption and
+keeps a constant-factor guarantee, and test KV retention with longer contexts and tool outputs, where
+recomputation is expensive.
 
 \textbf{4. Broaden the evaluation.} More arrival rates and memory sizes, a larger model, and measuring how close
 each run comes to the theory's lower bound on $\mathrm{OPT}$, which tests whether the proven constant is pessimistic.
