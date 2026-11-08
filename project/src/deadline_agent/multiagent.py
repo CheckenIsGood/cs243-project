@@ -27,6 +27,7 @@ from typing import Any
 
 from .clock import now
 from .datasets import Task
+from .model_client import messages_tokens
 from .prompts import FINAL_SCHEMA, evidence_log_messages, parse_final, parse_plan, plan_messages, plan_schema, raw_block
 from .tools import DelayModel, SearchTool, normalize_query
 
@@ -175,18 +176,28 @@ class _Drop(Exception):
 
 async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: DelayModel, seed: int,
                          top_k: int = 4, result_cap: int = 576, preload: bool | str = False, inline_tools: bool = True,
-                         final_max_tokens: int = 64) -> TaskResult:
+                         final_max_tokens: int = 64, controller=None) -> TaskResult:
     """preload modes (fan-out tasks): False (off); True (preload each returned result at the task's normal
     priority); "low" (preloads at the lowest engine priority); "jit" (just-in-time: every request's priority is
     the time by which its work is needed -- now for plan/final calls, and for a preload the expected time at which
     the agent's last outstanding tool returns, from the tool-latency distribution given elapsed times); "chain" (as True,
     and when a preload finishes while results that arrived during it are not yet prefilled, the next preload is sent
-    at once instead of at the next tool return).
+    at once instead of at the next tool return); "ctrl" (the client-side KV-aware controller of
+    docs/controller_theory.md Section 7, `controller` = a shared preload_controller.PreloadController: per tool
+    return it pins, sends an unpinned lowest-priority preload, or skips; plan and final calls go through it too, so
+    it can account for KV demand and yield pins before they are submitted).
     Preloads never block the agent: at most one is in flight; when the final call is ready, an unfinished preload
     is cancelled (its already-computed KV blocks stay in the prefix cache) and the final call is sent at once."""
     calls = 0
     n_pre = 0
     t_last = gfin = None
+    ctrl = controller if preload == "ctrl" else None
+    if preload == "ctrl" and ctrl is None:
+        raise ValueError("preload='ctrl' needs a PreloadController")
+    key = at.task_id
+    status = "error"  # until the task finishes (also covers outside cancellation of the whole run)
+    if ctrl is not None:
+        ctrl.task_arrived(key)
 
     async def llm(stage: str, msgs, max_tokens: int, schema, phase: str | None = None, prio: float | None = None):
         nonlocal calls, n_pre
@@ -201,6 +212,10 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
                 prio = now()  # needed now (preloads pass their expected need time explicitly)
             else:
                 prio = layer.priority(at, stage)
+        if ctrl is not None:
+            kind = phase if phase in ("plan", "final") else "other"
+            ctrl.yield_for(key, messages_tokens(backend, msgs))
+            return await ctrl.generate(backend, key, kind, msgs, max_tokens, phase or stage, schema, {"priority": prio})
         return await backend.generate(msgs, max_tokens, phase or stage, schema, {"priority": prio})
 
     tool = SearchTool(at.task_id, list(at.task.passages), delay, seed, top_k=top_k, result_token_cap=result_cap,
@@ -208,6 +223,7 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
     answer = None
     tools: list[asyncio.Task] = []
     pending: asyncio.Task | None = None  # in-flight preload (fan-out)
+    pre_tasks: list[asyncio.Task] = []  # every preload / pin of the controller mode
     try:
         async with asyncio.timeout_at(at.deadline):
             g = await llm("plan", plan_messages(at.task.question, at.width), 128, plan_schema(at.width), "plan")
@@ -225,7 +241,34 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
             # eager asynchronous tool issue (Lemma 3)
             t_issue = now()
             tools = [asyncio.create_task(tool.run(f"c{i + 1}", i, q)) for i, q in enumerate(uniq)]
-            if at.shape == "fanout" and preload == "chain":
+            if ctrl is not None:
+                ctrl.tools_issued(key, len(tools))
+            if at.shape == "fanout" and preload == "ctrl":
+                logged = []
+                for fut in asyncio.as_completed(tools):
+                    r = await fut
+                    if r.error:
+                        raise RuntimeError(r.error)
+                    logged.append(raw_block(r.call_id, uniq[int(r.call_id[1:]) - 1], r.text))
+                    if len(logged) == len(tools):
+                        break
+                    msgs = evidence_log_messages(at.task.question, list(logged))
+                    act = ctrl.on_return(key, messages_tokens(backend, msgs))
+                    if act == "skip":
+                        continue
+                    pinned = act == "pin"
+                    mt = ctrl.last_pin_tokens if pinned else 1
+                    extra = {"priority": LOWEST_PRIORITY, **({"ignore_eos": True} if pinned else {})}
+                    req = ctrl.register(backend, key, "preload", msgs, mt, pinned)
+                    calls += 1
+                    n_pre += 1
+                    pre_tasks.append(asyncio.create_task(
+                        ctrl.generate(backend, key, "preload", msgs, mt, "preload", None, extra, pinned, req=req)))
+                t_last = now()
+                ctrl.final_ready(key)
+                g = gfin = await llm("final", evidence_log_messages(at.task.question, logged), final_max_tokens,
+                                     FINAL_SCHEMA, "final")
+            elif at.shape == "fanout" and preload == "chain":
                 # like True, but a finished preload immediately chains another if results arrived meanwhile, so
                 # results that land while a preload is in flight are covered without waiting for the next arrival
                 logged, remaining, covered = [], set(tools), 0
@@ -295,9 +338,12 @@ async def run_agent_task(at: AgentTask, backend, layer: ServingLayer, delay: Del
     except Exception as e:  # e.g. a transport error: count the task as failed instead of aborting the whole run
         status, end, answer = "error", None, f"{type(e).__name__}: {e}"[:200]
     finally:
-        for tk in tools + ([pending] if pending else []):  # a dropped / late task stops its tool calls and preload
-            tk.cancel()
-        await asyncio.gather(*tools, *([pending] if pending else []), return_exceptions=True)
+        for tk in tools + ([pending] if pending else []) + pre_tasks:  # a dropped / late task stops its tool calls
+            tk.cancel()                                                 # and preloads (pins are held open otherwise)
+        await asyncio.gather(*tools, *([pending] if pending else []), *pre_tasks, return_exceptions=True)
+        if ctrl is not None:
+            ctrl.task_done(key, gfin and gfin.submit_t, gfin and gfin.end_t if status == "ontime" else None,
+                           gfin and gfin.cached_tokens)
     return TaskResult(at.task_id, at.shape, at.arrival, at.deadline, status, end, answer, calls, t_last,
                       gfin and gfin.submit_t, gfin and gfin.first_token_t, gfin and gfin.prompt_tokens,
                       gfin and gfin.cached_tokens, n_pre)

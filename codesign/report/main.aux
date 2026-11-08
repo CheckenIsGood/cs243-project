@@ -1,0 +1,44 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{kim2024llmcompiler}
+\citation{yao2023react}
+\citation{kwon2023vllm}
+\citation{li2025continuum}
+\citation{luo2025autellix}
+\citation{shahout2024lamps}
+\citation{jaillet2025online}
+\citation{mohring1999approximation,skutella2005stochastic}
+\newlabel{sec:problem}{{1}{1}{}{section.1}{}}
+\newlabel{sec:design}{{2}{1}{}{section.2}{}}
+\citation{smith1956various}
+\citation{megow2004online}
+\citation{qwen3}
+\citation{yang2018hotpotqa}
+\citation{li2025continuum}
+\citation{luo2025autellix}
+\newlabel{eq:z}{{1}{2}{}{equation.1}{}}
+\newlabel{fig:design}{{1}{2}{Implementation. The client layer computes each task's index once and attaches it as the priority of every model call the task makes; a scheduler plug-in loaded with \texttt {--scheduler-cls} applies it inside vLLM. Shaded boxes are ours}{figure.1}{}}
+\newlabel{tab:main}{{1}{2}{All tasks at 16k tokens of KV memory, seven seeds (653 paired tasks). ``Faster'': share of tasks that finish earlier than under vLLM}{table.1}{}}
+\newlabel{sec:eval}{{3}{2}{}{section.3}{}}
+\citation{shahout2024lamps}
+\newlabel{fig:headline}{{2}{3}{Task completion times at 16k tokens of KV memory, seven workloads. (a) Fan-out tasks and ReAct tasks with up to four turns (539 of 653 tasks): our index finishes 90\% of them within 45\,s versus 74\,s with vLLM, and the slowest within 71\,s versus 120\,s. The longest tasks (six-turn ReAct, 17\%) are discussed in Section~\ref {sec:plan}. (b) Median over all tasks, per workload: our index improves every seed, by 29--46\% (mean: 11--24\%)}{figure.2}{}}
+\newlabel{fig:memory}{{3}{3}{Latency reduction of our index over vLLM as KV memory grows (95\% CIs). The tighter the memory, the larger the gain; with ample memory scheduling order barely matters and the index costs nothing}{figure.3}{}}
+\newlabel{sec:plan}{{4}{3}{}{section.4}{}}
+\bibdata{refs}
+\bibcite{jaillet2025online}{{1}{2025}{{Jaillet et~al.}}{{Jaillet, Jiang, Mellou, Molinaro, Podimata, and Zhou}}}
+\bibcite{kim2024llmcompiler}{{2}{2024}{{Kim et~al.}}{{Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and Gholami}}}
+\bibcite{kwon2023vllm}{{3}{2023}{{Kwon et~al.}}{{Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang, and Stoica}}}
+\bibcite{li2025continuum}{{4}{2025}{{Li et~al.}}{{Li, Mang, He, Zhang, Mao, Chen, Cheung, Gonzalez, and Stoica}}}
+\bibcite{luo2025autellix}{{5}{2025}{{Luo et~al.}}{{Luo, Shi, Cai, Zhang, Wong, Wang, Wang, Huang, Chen, Gonzalez, and Stoica}}}
+\bibcite{megow2004online}{{6}{2004}{{Megow \& Schulz}}{{Megow and Schulz}}}
+\bibcite{mohring1999approximation}{{7}{1999}{{M{\"o}hring et~al.}}{{M{\"o}hring, Schulz, and Uetz}}}
+\bibcite{qwen3}{{8}{2025}{{Qwen Team}}{{}}}
+\bibcite{shahout2024lamps}{{9}{2024}{{Shahout et~al.}}{{Shahout, Liang, Xin, Lao, Cui, Yu, and Mitzenmacher}}}
+\bibcite{skutella2005stochastic}{{10}{2005}{{Skutella \& Uetz}}{{Skutella and Uetz}}}
+\bibcite{smith1956various}{{11}{1956}{{Smith}}{{}}}
+\bibcite{yang2018hotpotqa}{{12}{2018}{{Yang et~al.}}{{Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and Manning}}}
+\bibcite{yao2023react}{{13}{2023}{{Yao et~al.}}{{Yao, Zhao, Yu, Du, Shafran, Narasimhan, and Cao}}}
+\bibstyle{icml2025}
+\gdef \@abspage@last{4}

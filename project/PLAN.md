@@ -1,5 +1,9 @@
 # Plan: deadline-aware serving of multi-agent LLM workloads on one GPU
 
+> **2026-11-07: the active direction is `../codesign`** (provable task-level scheduling on vLLM). Its midterm
+> report is `codesign/report/main.pdf`; status and next steps are in `codesign/docs/experiment_plan.md` §6–7.
+> This plan covers the preloading study, which is complete and is the fallback.
+
 Last updated 2026-11-07. Replaces the old single-agent, summarization-centric plan (kept only in git history:
 commit `4e56d77`). Summarization is no longer part of the project.
 

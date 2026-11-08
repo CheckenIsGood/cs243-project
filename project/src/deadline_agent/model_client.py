@@ -79,6 +79,9 @@ class FakeBackend:
         ttft = self.costs.overhead_s + self.costs.prefill_s_per_tok * (prompt_toks - (cached or 0))
         await asyncio.sleep(ttft)
         first = now()
+        on_first = (extra or {}).get("_on_first")
+        if on_first is not None:
+            on_first()
         await asyncio.sleep(self.costs.decode_s_per_tok * out_toks)
         return Generation(text, prompt_toks, out_toks, finish, submit, first, now(), cached_tokens=cached)
 
@@ -143,7 +146,9 @@ class VLLMBackend:
             "stream_options": {"include_usage": True},
             "chat_template_kwargs": {"enable_thinking": False},
         }
-        body.update(extra or {})
+        extra = dict(extra or {})
+        on_first = extra.pop("_on_first", None)  # client-side callback at the first streamed token (not sent)
+        body.update(extra)
         if "priority" in body:  # vLLM's request priority is an int (lower runs first); keep order at 1 ms resolution
             body["priority"] = int(round(float(body["priority"]) * 1000))
         if self.use_schema and schema is not None:
@@ -152,7 +157,7 @@ class VLLMBackend:
         for attempt in range(2):  # one retry if the connection drops before any output (stale pooled socket)
             first, chunks, usage, finish = None, [], {}, "unknown"
             try:
-                await self._stream(body, chunks, usage)
+                await self._stream(body, chunks, usage, on_first)
                 break
             except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError):
                 if attempt == 1 or chunks:
@@ -170,8 +175,10 @@ class VLLMBackend:
             cached_tokens=details.get("cached_tokens"),
         )
 
-    async def _stream(self, body: dict, chunks: list[str], usage: dict) -> None:
-        """Stream one completion into `chunks`; usage fields, first-token time and finish reason go into `usage`."""
+    async def _stream(self, body: dict, chunks: list[str], usage: dict, on_first=None) -> None:
+        """Stream one completion into `chunks`; usage fields, first-token time and finish reason go into `usage`.
+        `on_first` (if given) is called once, at the first output event (a content piece or a finish reason)."""
+        fired = False
         async with self._client.stream("POST", "/v1/chat/completions", json=body) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
@@ -187,6 +194,9 @@ class VLLMBackend:
                         chunks.append(piece)
                     if ch.get("finish_reason"):
                         usage["_finish"] = ch["finish_reason"]
+                    if on_first is not None and not fired and (piece or ch.get("finish_reason")):
+                        fired = True
+                        on_first()
 
     async def reset_prefix_cache(self) -> None:
         """Requires the server to run with VLLM_SERVER_DEV_MODE=1 (exposes POST /reset_prefix_cache)."""

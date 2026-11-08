@@ -1,7 +1,8 @@
 # Progress report: everything since the pivot away from summarization
 
-Written 2026-11-07. Covers commit `fc3566e` ("new direction and idea", 2026-11-07 03:44) and all uncommitted work
-after it. The old summarization plan lives only in git history (commit `4e56d77`).
+Written 2026-11-07; last updated 2026-11-07 evening (controller implementation, GPU test, prior-work review).
+Covers commit `fc3566e` ("new direction and idea", 2026-11-07 03:44) and all uncommitted work after it. The old
+summarization plan lives only in git history (commit `4e56d77`).
 
 Labels used throughout:
 - **[GPU]**: measured on the real serving stack.
@@ -40,10 +41,22 @@ Labels used throughout:
      prefix (Lemma Q).
    - It derived a **break-even survival threshold σ\* ≈ 0.92**, which gets the sign right in 6/6 measured
      conditions.
-   - It specified a **KV-aware preload controller**. The controller is not yet implemented or GPU-tested.
-6. **Novelty is modest.** The harm is the classical premature-prefetch effect (Cao, Felten, Karlin & Li 1995).
-   What is new is the measurement in agent serving, the vLLM queue-eviction mechanism, the σ\* threshold for
-   batched engines, and a client-side controller.
+   - It specified a **KV-aware preload controller**.
+6. **The controller is implemented and GPU-tested** [GPU] (§6.9–6.10), on 3 seeds × 5 conditions. It runs entirely
+   client-side on stock vLLM.
+   - It keeps the full gain when memory is ample: +3.1 to +3.4 s on the three-seed mean.
+   - Under KV pressure it has the best three-seed mean: +0.2 / +0.8 s at 50k / 40k, against −3.5 / −4.0 for
+     always-preload and −0.5 / −1.3 for low-priority preload.
+   - It beats always-preload by 7–9 s on the heaviest trace.
+   - It is significantly worse than low-priority preload in 1 of 12 cells (−0.95 s at 80k), and worse than no
+     preloading in 1 of 15 (−2.75 s at 50k).
+7. **Novelty is modest** (§7).
+   - The preload request itself is the known cache-warming trick.
+   - The harm is the classical premature-prefetch effect (Cao, Felten, Karlin & Li 1995). CacheScout (2026)
+     independently saw warm-ups hurt at small caches.
+   - What is ours: the multi-tenant measurement of the sign flip, the vLLM queue-eviction mechanism, the σ\*
+     threshold, and a controller that needs **no engine changes**. Continuum, KVFlow, Sutradhara and CacheScout
+     all modify the engine.
 
 ---
 
@@ -356,7 +369,7 @@ nearly always survive.
 - **C** [approx]: pinning pays iff (1−p)·cost(L) > ρ_s·c·h/a. Holding a request open costs batch slots and KV,
   so pinning rarely pays.
 
-### 6.6 Controller specification (not yet implemented)
+### 6.6 Controller specification (implemented: §6.9)
 
 On each tool result:
 1. Skip if a preload is already in prefill.
@@ -401,6 +414,119 @@ M4 used seed-2 arrivals, 8 workload seeds and no fitted parameters.
 **Cost:** about 3–4 GPU hours (about $2–2.50), plus about 1 h of implementation, including pin mechanics and the
 exploration probe.
 
+### 6.9 Implementation (`src/deadline_agent/preload_controller.py`)
+
+- **One `PreloadController` per run, shared by all tasks.** It sees only client-observable data:
+  - its own requests and their streamed first-token times;
+  - `prompt_tokens` and `cached_tokens` from vLLM's usage fields;
+  - the tool-latency law;
+  - the server's KV capacity, read from `/metrics` (`cache_config_info`).
+
+  It never modifies the engine.
+- **Decision rule:** the theory doc's `decide()` from `controller_theory.py`, reused unchanged. Every estimator
+  follows the M4 controller:
+  - KV demand D̂;
+  - prefill utilization û (cost model applied to computed tokens);
+  - fluid TTL;
+  - ρ_s;
+  - σ̂ from the final calls' `cached_tokens`.
+- **Pins:** a lowest-priority preload with `ignore_eos` and max_tokens = ⌈wait quantile / a⌉ + 1, held open on its
+  HTTP stream. It is cancelled when superseded, when its task's final call emits its first token, or when another
+  task's plan/final call needs the room (`yield_for`). Unpinned preloads are the 'low' mode's 1-token request.
+- **Additions not in the theory doc's spec** (stated here because they are post-spec choices):
+  1. **Exploration probe.** When only the σ̂ feedback blocks a preload, every 10th such opportunity is still
+     preloaded, so σ̂ can recover. `explore_every = 10` is a new knob, set once.
+  2. **Size guard.** Survival p = 0 if D̂ + L > M, i.e. the prefix cannot fit beside current demand.
+  3. **Token-count calibration.** The client's approximate token counts are rescaled online by the server's
+     reported prompt_tokens (ratio ≈ 0.97).
+- **Wiring:**
+  - `--preload-modes ctrl` in `multiagent.py` and `scripts/real_multiagent.py`.
+  - A first-token callback in both backends.
+  - Per-run decision logs in `ctrl_r<rate>_fcfs.json`.
+- **Tests:** `tests/test_preload_controller.py`, 5 tests:
+  - ample KV gives the 'low' behaviour;
+  - tiny KV gives no preloads;
+  - pins are held open and then released;
+  - feedback switch-off plus the probe;
+  - a multi-tenant run.
+
+  The full suite passes (7646 tests).
+
+### 6.10 GPU test results [GPU]
+
+**Setup:** the §6.8 design on a new A40 pod (`9wtqy16fleq44n`; the old pod's host had no free GPU). Per KV cap,
+one fresh server. Per seed, all four modes run on the same arrival trace.
+
+**Paired savings vs off**, in seconds (positive = faster), with 95% bootstrap CIs on the ctrl column:
+
+| seed (tasks, off mean) | cap | rate | on | low | **ctrl** | ctrl − low |
+|---|---|---|---|---|---|---|
+| 2 (111, ≈27 s) | full 167k | 0.6 | +3.40 | +2.38 | **+3.44** [2.1, 4.9] | +1.07 [0.5, 1.6] |
+| | 80k | 0.6 | +3.09 | +3.28 | **+3.17** [1.9, 4.5] | −0.11 (n.s.) |
+| | 50k | 0.6 | −9.81 | −3.37 | **−2.75** [−4.8, −0.7] | +0.62 (n.s.) |
+| | 40k | 0.6 | −9.35 | −4.64 | **−0.06** [−2.1, 2.0] | **+4.59** [3.3, 6.0] |
+| | 40k | 0.3 | — | — | **+3.27** [2.0, 4.6] | — |
+| 3 (100, ≈20 s) | full | 0.6 | +2.94 | +3.19 | **+3.14** [2.0, 4.2] | −0.05 (n.s.) |
+| | 80k | 0.6 | +2.82 | +2.56 | **+2.48** [1.3, 3.6] | −0.09 (n.s.) |
+| | 50k | 0.6 | −0.20 | +1.38 | **+1.56** [0.5, 2.6] | +0.18 (n.s.) |
+| | 40k | 0.6 | −1.30 | +0.15 | **+0.49** [−0.5, 1.5] | +0.34 (n.s.) |
+| | 40k | 0.3 | — | — | **+0.51** [−0.3, 1.3] | — |
+| 4 (103, ≈22 s) | full | 0.6 | +3.62 | +3.41 | **+3.67** [2.4, 4.9] | +0.27 (n.s.) |
+| | 80k | 0.6 | +4.43 | +4.53 | **+3.58** [2.1, 5.0] | **−0.95** [−1.5, −0.4] |
+| | 50k | 0.6 | −0.53 | +0.42 | **+1.82** [0.7, 3.0] | **+1.40** [0.5, 2.4] |
+| | 40k | 0.6 | −1.36 | +0.52 | **+1.95** [0.75, 3.2] | **+1.43** [0.4, 2.5] |
+| | 40k | 0.3 | — | — | **+1.71** [1.0, 2.4] | — |
+
+**Mean over the three seeds**, saving vs off in seconds:
+
+| cap | rate | on | low | **ctrl** | M4 prediction for ctrl |
+|---|---|---|---|---|---|
+| full | 0.6 | +3.32 | +2.99 | **+3.42** | +3.27 |
+| 80k | 0.6 | +3.45 | +3.46 | **+3.08** | +3.01 |
+| 50k | 0.6 | −3.51 | −0.52 | **+0.21** | +1.02 |
+| 40k | 0.6 | −4.00 | −1.32 | **+0.79** | −0.12 |
+| 40k | 0.3 | — | — | **+1.83** | +1.62 |
+
+Complete: 3 seeds × 5 conditions = 15 paired cells, 51 runs, no failures. Pod `9wtqy16fleq44n` was up 3.6 h
+(≈ $2.15) and is stopped.
+
+**Against the §6.8 predictions:**
+- **"ctrl ≥ low everywhere": holds in 11 of 12 cells.**
+  - ctrl is significantly better in 4 cells: seed 2 full (+1.07) and 40k (+4.59); seed 4 50k (+1.40) and 40k
+    (+1.43).
+  - It is not significantly different in 7.
+  - It is **significantly worse once**: seed 4 at 80k, −0.95 s [−1.5, −0.4]. There ctrl sent fewer preloads (1.6
+    vs 2.1 per task) and had a lower final cache hit (0.38 vs 0.42). It was too conservative with ample memory.
+    The likely causes are σ\* rising under load, which blocks preloads that would have survived, or pin overhead.
+    The data does not separate the two.
+- **"ctrl ≥ 5 s better than on at 50k/40k": holds only on the heavy trace.** It is 7.1 and 9.3 s on seed 2, but
+  1.8–3.3 s on seeds 3 and 4, where "on" itself loses only 0.2–1.4 s. ctrl beats on in all 6 tight-memory cells.
+- **"ctrl never worse than off" (A-i): fails once.** Seed 2 at 50k gives −2.75 s; the other 14 cells are ≥ −0.06.
+  ctrl is significantly better than off in 11 of 15 cells.
+- **Magnitudes:** the three-seed means track M4 closely:
+  - full cache: predicted +3.27, measured +3.42;
+  - 80k: predicted +3.01, measured +3.08;
+  - 40k at 0.3/s: predicted +1.62, measured +1.83.
+
+  The 50k mean (+0.21) is below the prediction (+1.02) because of seed 2. The 40k mean (+0.79) is above the
+  prediction (−0.12).
+- **Ranking by three-seed mean under memory pressure** (50k and 40k): ctrl > low > on, in both. With ample memory
+  (full, 80k) all three are within 0.5 s.
+- Answers are unaffected: 90–98% identical to off, |ΔF1| ≤ 0.045.
+
+**Mechanism notes:**
+- The controller pins far more than M4 predicted: 37–44 pins per run at 40–50k on seed 2, vs 10–15.
+- In the one losing cell, the loss is spread evenly. Tasks the controller never preloaded slowed as much as
+  pinned ones (−2.7 s each), and the final call's TTFT rose from 4.3 to 5.4 s. That is the cross-tenant stretch
+  BE′ describes, plausibly from pins holding KV while other tasks' finals wait at the admission gate.
+- A **pins-off variant** (survival-gated unpinned preloads only) is the obvious next ablation. It is not yet run.
+- σ̂ stayed at 0.80–0.97. The fallback rarely binds: 1–2 exploration probes per run.
+
+**Caveats:**
+- **Drift across pods.** The same seed and cell gave off means 1–3 s apart across pods (e.g. seed 2 at 40k: 24.5 s
+  earlier vs 27.5 s here). Only within-session pairs are compared.
+- **One run per (seed, cell).** Seeds differ a lot in load, so the 50k/40k conclusions depend on the trace.
+
 ---
 
 ## 7. Prior work and novelty
@@ -414,14 +540,68 @@ exploration probe.
   - Jaillet et al. 2025 (KV-constrained scheduling, no constant ratio);
   - Continuum, KVFlow, InferCept, Autellix, Sutradhara (closest systems work).
 
-  **These still need checking before we claim "first".**
+- **Closest work, checked 2026-11-07 against the papers themselves:**
+  - **Continuum** (arXiv 2511.02230, ICLR 2026). Engine-side: about 1k lines added to vLLM 0.10.2's scheduler.
+    - It *pins the previous turn's KV* during a tool call, for a TTL chosen to maximize
+      P(tool done by τ)·benefit − (memory share)·τ. Memory cost is charged, but there is no break-even
+      threshold and no analysis of harm to other tenants.
+    - It does **not** prefill tool results ahead of need. Parallel tools are "natural" but not evaluated.
+  - **KVFlow** (arXiv 2507.07400, NeurIPS 2025). Engine-side: SGLang frontend and backend changes.
+    - Workflow-aware eviction by steps-to-execution, plus CPU→GPU *transfer* of already-computed KV.
+    - No tool-latency model, and no new prefill ahead of need.
+    - Prefetch is gated by a fixed "enough evictable memory" check and a concurrency cap. There is no harm
+      analysis and no adaptive switch-off.
+  - **Sutradhara** (arXiv 2601.12967, Microsoft, Jan 2026). The **closest**: an orchestrator–engine co-design on
+    vLLM 0.11 with 5 new engine APIs.
+    - It eagerly prefills the *tool-independent* part of the next prompt while tools run, pins those blocks at
+      high reuse priority, and splices the tool outputs in when they arrive.
+    - It does not preload each tool result as it arrives.
+    - It does not study when early prefill hurts under KV pressure.
+    - It states that its engine co-design is "strictly necessary" for its pinning.
+  - **CacheScout** (arXiv 2608.14624, Aug 2026). An ~800-line vLLM 0.11 patch.
+    - It predicts the next agent and sends **warm-up prefill requests** for that agent's reusable anchor
+      (system prompt, tool definitions). It also uses a survival × recency × size eviction score.
+    - Warm-ups are gated by a predictability threshold. With the gate disabled, warm-ups **raise per-turn latency
+      by up to 22% at small cache sizes**. That is independent evidence for our harm finding, in a different
+      setting.
+    - No break-even analysis, no multi-tenant evaluation, no tool-result preloading.
+  - **FlashAgents** (MLSys 2026). SGLang modifications.
+    - Streams an upstream agent's tokens into the downstream agent's incremental prefill.
+    - Measures compute overhead (up to 3× at small chunks), not KV-pressure harm.
+  - **Prompt-cache warming** (folklore; e.g. Anthropic-cache warmers, vllm-mlx warm prompts). A `max_tokens=1`
+    request so a prefix is cached before it is needed. **Our preload request is exactly this trick.**
+  - **Less close:**
+    - Conveyor (tool partial execution during decode);
+    - PASTE / speculative tool execution (arXiv 2603.18897);
+    - ThunderAgent (2602.13692, program-aware scheduler);
+    - AgentServe ("resume prefill");
+    - SmoothAgent.
+
+    Of these, only abstracts or snippets were read.
+  - Coverage: about 10 targeted searches, not a systematic review. 2026 arXiv moves fast.
 - **What is ours:**
+  - The others all modify the engine. Ours runs **on stock vLLM, client-side only**, with pins emulated as
+    open low-priority requests.
   - the multi-tenant agent-serving measurement, including the sign flip and its mechanism;
   - Lemma Q as the dominant cause in vLLM;
   - the σ\* threshold for batched engines;
   - the pinning result;
   - a client-side, feedback-driven preload controller.
 - From the general theory: the tight 1 + 1/δ pair (Thms 2 and 4), for batch releases only.
+- **Do not claim** preloading or tool overlap as the idea. **Do claim:** "proactive KV work backfires in
+  multi-tenant agent serving: when, why (Lemma Q), the σ\* threshold, and a stock-engine controller that avoids it
+  while keeping the gain."
+
+**Novelty grade relative to the course's example projects** (`example_projects/`). This is my judgment:
+
+| project | core idea | main claimed contribution | grade |
+|---|---|---|---|
+| A: network-aware text / KV / compressed-KV transport between agents | decision already modeled (Dai et al. 2026; CacheGen) | real cross-machine measurement + adaptive controller | C+ / B− |
+| B: predict KV-transfer success at prefill (activation routing + cross-model KV transfer) | fresh combination of two 2026 lines; self-described "fairly obvious" | characterization + predictor | B− |
+| **Ours** | known trick (cache warming / eager prefill) | the harm under KV pressure, its mechanism, σ\*, and a client-only controller validated on GPU | **B− now; B / B+ if seed 4 and a pins-off ablation hold up** |
+
+We are well ahead of both examples on execution and evidence (paired GPU runs, mechanism from source, theory
+with an independent check). On novelty alone we are in the same band.
 
 ---
 
@@ -429,12 +609,13 @@ exploration probe.
 
 | What | Where |
 |---|---|
-| Serving layer and agents; preload modes off/on/low/jit/chain; per-task timing and cache fields | `src/deadline_agent/multiagent.py` |
-| GPU experiment driver (`--preset`, `--preload-modes`, `--set KEY=VALUE`, `--delay`) | `scripts/real_multiagent.py` |
+| Serving layer and agents; preload modes off/on/low/jit/chain/ctrl; per-task timing and cache fields | `src/deadline_agent/multiagent.py` |
+| Client-side KV-aware preload controller | `src/deadline_agent/preload_controller.py`, `tests/test_preload_controller.py` |
+| GPU experiment driver (`--preset`, `--preload-modes`, `--set KEY=VALUE`, `--delay`, `--kv-tokens`) | `scripts/real_multiagent.py` |
 | Server launcher (`KV_BLOCKS`, `GPU_UTIL`, `SCHED`, `PREFIX_CACHE`) | `scripts/serve_model.sh` |
-| KV-pressure sweep, run on the pod | `scripts/kv_pressure.sh` |
-| Paired analysis | `scripts/analyze_preload.py`, `scripts/analyze_preload_jit.py` |
-| Results | `results/real/{multiagent,preload_contention,preload_jit,preload_seeds,preload_kv}/`, `results/sim/`, `results/calibration/`, `results/logs_pod/` |
+| KV-pressure sweep; controller GPU test (both run on the pod) | `scripts/kv_pressure.sh`, `scripts/ctrl_test.sh` |
+| Paired analysis | `scripts/analyze_preload.py`, `scripts/analyze_preload_jit.py`, `scripts/analyze_ctrl.sh` |
+| Results | `results/real/{multiagent,preload_contention,preload_jit,preload_seeds,preload_kv,preload_ctrl}/`, `results/sim/`, `results/calibration/`, `results/logs_pod/` |
 | Theory | `docs/{general_theory,open_problem,verification_report,preload_theory,controller_theory}.md` |
 | Tests | `tests/` (full suite passes; run with `.venv/bin/python -m pytest -q`) |
 
@@ -446,12 +627,15 @@ exploration probe.
    - `report/main.tex` still describes the single-task slice and the simulated policy sweep.
    - It needs refocusing on the KV-pressure result and the real GPU numbers.
    - It needs the verifier's §9 corrections and a citation of Cao et al.
-   - The σ\* threshold should be labelled approximate, and the controller presented as the next step.
-2. **Implement the controller and run the GPU test** in §6.8.
-3. **More seeds for the KV-pressure cells**, and a 65k cap to locate the crossover.
+   - The σ\* threshold should be labelled approximate.
+   - The controller result (§6.10) can now go in as a measured result.
+   - Cite CacheScout and Sutradhara.
+2. ~~Finish seed 4 of the controller test, and stop pod `9wtqy16fleq44n`.~~ Done (§6.10); the pod is stopped.
+3. **Pins-off ablation** of the controller at 50k/40k, the likely cause of the seed-2 50k loss. Add a 65k cap to
+   locate the crossover.
 4. **Fix plan truncation** (plan max_tokens 128) before the final evaluation.
 5. **Update `PLAN.md`** to the preload/KV framing. Its §3–6 predate this work.
-6. **Verify Continuum and KVFlow** before any novelty claim.
-7. **Housekeeping.**
-   - Commit the uncommitted work.
-   - Decide whether to delete the old stopped pod `apu73vvxwlk9qy`.
+6. **Housekeeping.**
+   - ~~Commit the uncommitted work.~~ Done (`93074d8`, `d8ad76d`).
+   - Decide whether to delete the old stopped pods `apu73vvxwlk9qy` and `duv6d7rvqgqk5q`. Only their disks
+     bill; `duv6d7rvqgqk5q`'s host had no free GPU on restart.

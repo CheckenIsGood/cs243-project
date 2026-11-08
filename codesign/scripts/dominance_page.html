@@ -1,0 +1,424 @@
+<title>Sweep Latency Dominance</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a lab-notebook analysis tool. Controls in one row, the two distribution views side by side,
+   the selected pair's percentile curve below, then the list of claims the data supports. */
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --ink: #14171c; --ink-2: #4a515c; --muted: #7b8390; --grid: #e4e7eb;
+  --line: #d5d9df; --sel: #14171c; --sel-ink: #ffffff;
+  --fast: #2a78d6; --slow: #e34948; --mid: #eef0f2;
+  --c0a: #5f6670; --c0b: #2a78d6; --c1: #eb6834; --c2: #1baf7a; --c3: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #6250d6;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121417; --surface: #1a1d21; --ink: #eceef1; --ink-2: #b4bac3; --muted: #868d98; --grid: #2a2e34;
+  --line: #3a3f46; --sel: #eceef1; --sel-ink: #121417;
+  --fast: #3987e5; --slow: #e66767; --mid: #262a2f;
+  --c0a: #a3a9b2; --c0b: #3987e5; --c1: #d95926; --c2: #199e70; --c3: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121417; --surface: #1a1d21; --ink: #eceef1; --ink-2: #b4bac3; --muted: #868d98; --grid: #2a2e34;
+  --line: #3a3f46; --sel: #eceef1; --sel-ink: #121417;
+  --fast: #3987e5; --slow: #e66767; --mid: #262a2f;
+  --c0a: #a3a9b2; --c0b: #3987e5; --c1: #d95926; --c2: #199e70; --c3: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9;
+  color-scheme: dark; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px; }
+header h1 { font-size: 22px; font-weight: 600; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--ink-2); max-width: 75ch; }
+.tag { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--slow); border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px; margin-right: 8px; }
+.controls { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: end; }
+.ctl { display: grid; gap: 6px; min-width: 0; }
+.ctl > span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); border: 0; padding: 6px 12px;
+  cursor: pointer; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); }
+select { font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; background: var(--surface);
+  color: var(--ink-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 8px; cursor: pointer; }
+.chip i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.chip[aria-pressed="false"] { opacity: .45; }
+.chip[aria-pressed="false"] i { background: var(--muted) !important; }
+button:focus-visible, select:focus-visible, .cell:focus-visible { outline: 2px solid var(--fast); outline-offset: 2px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.panel h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+.panel .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+svg .lbl { font-family: var(--font); font-size: 12px; font-weight: 500; }
+.axis line, .gridl { stroke: var(--grid); }
+.zero { stroke: var(--ink-2); stroke-width: 1; }
+.matrix { overflow-x: auto; }
+table.m { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; margin: 0 auto; }
+table.m th { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink-2); padding: 2px 4px; }
+table.m th.row { text-align: right; }
+.cell { width: 44px; height: 34px; border-radius: 4px; text-align: center; font-family: var(--mono); font-size: 12px;
+  cursor: pointer; background: var(--mid); color: var(--ink); }
+.cell.self { background: transparent; cursor: default; color: var(--muted); }
+.cell.on { box-shadow: 0 0 0 2px var(--ink); }
+.v-dom { background: var(--fast); color: #fff; }
+.v-part { background: color-mix(in srgb, var(--fast) 28%, var(--surface)); }
+.v-domd { background: var(--slow); color: #fff; }
+.v-partw { background: color-mix(in srgb, var(--slow) 28%, var(--surface)); }
+.v-cross { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--fast) 30%, var(--surface)) 0 5px,
+  color-mix(in srgb, var(--slow) 30%, var(--surface)) 5px 10px); }
+.key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+.key span { display: inline-flex; align-items: center; gap: 6px; }
+.key b { display: inline-block; width: 26px; height: 16px; border-radius: 3px; font-family: var(--mono); font-size: 10px;
+  font-weight: 500; text-align: center; line-height: 16px; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
+.stat { display: grid; gap: 1px; }
+.stat span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.stat b { font-size: 16px; font-weight: 600; }
+.stat small { color: var(--ink-2); font-family: var(--mono); font-size: 11.5px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 999px; }
+.claims { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+table.c { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+table.c th { text-align: left; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+  font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+table.c td { padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+table.c tr { cursor: pointer; }
+table.c tr:hover td { background: var(--mid); }
+td.num { text-align: right; font-family: var(--mono); font-size: 12.5px; }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / .12);
+  max-width: 300px; font-variant-numeric: tabular-nums; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; align-items: center; }
+.tip .r i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+.notes { color: var(--ink-2); font-size: 13px; display: grid; gap: 6px; max-width: 95ch; }
+.notes p { margin: 0; }
+.notes code { font-family: var(--mono); font-size: 12px; }
+.defs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 20px; font-size: 12.5px; color: var(--ink-2); }
+.defs div { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.defs code { font-family: var(--mono); font-weight: 500; color: var(--ink); min-width: 30px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Sweep latency dominance</h1>
+    <p><span class="tag">Preliminary</span><span id="meta"></span></p>
+  </header>
+
+  <div class="controls">
+    <div class="ctl"><span>KV memory</span><div class="seg" id="capSeg" role="group" aria-label="KV memory"></div></div>
+    <div class="ctl"><span>Task class</span><select id="clsSel" aria-label="Task class"></select></div>
+    <div class="ctl" style="flex:1 1 360px"><span>Shown in the distribution chart</span><div class="chips" id="chips"></div></div>
+  </div>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>Task latency distribution</h2>
+      <p class="sub" id="ecdfSub">Share of tasks finished within each latency. A curve further up and left is faster.</p>
+      <div id="ecdf"></div>
+    </section>
+    <section class="panel">
+      <h2>Who dominates whom</h2>
+      <p class="sub">Row vs column, percentiles 10 to 90, 95% simultaneous band. Click a cell to plot it.</p>
+      <div class="matrix" id="matrix"></div>
+      <div class="key" id="key"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2 id="pairTitle">Selected pair</h2>
+    <p class="sub">Seconds the row config saves over the column config at each percentile of the latency distribution.
+      Above zero everywhere means the row config first-order dominates.</p>
+    <div class="stats" id="pairStats"></div>
+    <div id="qdiff"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Claims the data supports so far</h2>
+    <p class="sub" id="claimsSub"></p>
+    <div class="claims" id="claims"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Configurations</h2>
+    <div class="defs" id="defs"></div>
+  </section>
+
+  <section class="notes">
+    <p><b>Method.</b> Tasks are paired by seed and task id, so every config saw the same arrivals and tool delays.
+      For each pair the curve is Q<sub>col</sub>(p) − Q<sub>row</sub>(p) on p = 0.10, 0.15, …, 0.90, pooled over seeds.
+      The band comes from a two-level bootstrap (resample seeds, then tasks within each seed, keeping the pairing),
+      widened to hold over all 17 percentiles at once (sup-t). Tails beyond p10 and p90 are left out because they
+      rest on a handful of tasks.</p>
+    <p><b>Verdicts.</b> Dominates: the band stays at or above zero at every percentile. Faster in part: significantly
+      faster at some percentiles and never significantly slower. Crossing: significantly faster at some and
+      significantly slower at others. The darker outline marks verdicts that also hold with a 99% band.</p>
+    <p><b>Read with care.</b> Only a few seeds per cell so far (see the header), so seed-to-seed variation is only lightly
+      sampled, and a repeat run of the same seed has moved the mean by about 2.7 s. The page makes about 1,000 comparisons, so a few 95%
+      verdicts will be false; trust the ones that hold at 99% or repeat across memory sizes and task classes.
+      Generated by <code>codesign/scripts/dominance.py</code>.</p>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const D = __DATA__;
+const CAPNAME = { kv1000: "16k tokens", kv1500: "24k", kv1875: "30k", kvfull: "Full" };
+const CLSNAME = { all: "All tasks", fanout: "Fan-out, all widths", react: "ReAct, all lengths",
+  "fanout-2": "Fan-out, 2 searches", "fanout-4": "Fan-out, 4 searches", "fanout-8": "Fan-out, 8 searches",
+  "react-2": "ReAct, 2 turns", "react-4": "ReAct, 4 turns", "react-6": "ReAct, 6 turns" };
+const DEF = { C0a: "Stock vLLM, FCFS", C0b: "Our index, stock admission", C1: "Continuum-like: pins, task FCFS",
+  C2: "Autellix-like PLAS, prefix admission with kicks", C3: "Our index, prefix admission with kicks",
+  C5: "Full co-design: kicks, soft TTL, queue protection, preloads", C6: "Our index, soft TTL, queue protection, no kicks",
+  C7: "Our index with Continuum pins" };
+const CFG = D.configs;
+const col = c => `var(--${c.toLowerCase()})`;
+const state = { cap: "kv1000", cls: "all", shown: new Set(["C0a", "C0b", "C1", "C3", "C6"]), row: "C0b", colc: "C0a" };
+try { const s = JSON.parse(localStorage.getItem("domstate") || "null"); if (s) { Object.assign(state, s, { shown: new Set(s.shown) }); } } catch (e) {}
+const save = () => { try { localStorage.setItem("domstate", JSON.stringify({ ...state, shown: [...state.shown] })); } catch (e) {} };
+const MIRROR = { dominates: "dominated", dominated: "dominates", better_part: "worse_part", worse_part: "better_part", crossing: "crossing", none: "none" };
+const VTEXT = { dominates: "Dominates", dominated: "Dominated", better_part: "Faster in part", worse_part: "Slower in part", crossing: "Crossing", none: "No difference" };
+const VSYM = { dominates: "≻≻", dominated: "≺≺", better_part: "≻", worse_part: "≺", crossing: "×", none: "·" };
+const VCLS = { dominates: "v-dom", dominated: "v-domd", better_part: "v-part", worse_part: "v-partw", crossing: "v-cross", none: "" };
+const f1 = x => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1);
+const pct = x => Math.round(x * 100) + "%";
+
+function pair(cap, cls, a, b) {
+  const P = D.caps[cap]?.pairs; if (!P) return null;
+  let r = P[`${cls}|${a}|${b}`];
+  if (r) return r;
+  r = P[`${cls}|${b}|${a}`]; if (!r) return null;
+  return { d: r.d.map(x => -x), lo: r.hi.map(x => -x), hi: r.lo.map(x => -x), lo99: r.hi99.map(x => -x), hi99: r.lo99.map(x => -x),
+    mean: -r.mean, mean_ci: [-r.mean_ci[1], -r.mean_ci[0]], faster: 1 - r.faster, faster_ci: [1 - r.faster_ci[1], 1 - r.faster_ci[0]],
+    n: r.n, seeds: r.seeds, verdict: MIRROR[r.verdict], verdict99: MIRROR[r.verdict99] };
+}
+function lats(cap, cls, c) {
+  const raw = D.caps[cap].raw, out = [];
+  raw.tasks.forEach(([s, k], i) => { if (cls === "all" || k === cls || k.startsWith(cls + "-")) out.push(raw.lat[c][i]); });
+  return out.sort((x, y) => x - y);
+}
+
+const tip = document.getElementById("tip");
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+}
+const hideTip = () => { tip.hidden = true; };
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a = {}, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+
+function controls() {
+  const seg = document.getElementById("capSeg"); seg.innerHTML = "";
+  Object.keys(D.caps).forEach(k => {
+    const b = document.createElement("button"); b.textContent = CAPNAME[k] || k; b.id = "cap-" + k;
+    b.setAttribute("aria-pressed", k === state.cap); b.onclick = () => { state.cap = k; save(); render(); }; seg.appendChild(b);
+  });
+  const sel = document.getElementById("clsSel");
+  if (!sel.options.length) {
+    D.classes.forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = CLSNAME[k]; sel.appendChild(o); });
+    sel.onchange = () => { state.cls = sel.value; save(); render(); };
+  }
+  sel.value = state.cls;
+  const chips = document.getElementById("chips"); chips.innerHTML = "";
+  CFG.forEach(c => {
+    const b = document.createElement("button"); b.className = "chip"; b.id = "chip-" + c;
+    b.setAttribute("aria-pressed", state.shown.has(c));
+    b.innerHTML = `<i style="background:${col(c)}"></i>${c}`; b.title = DEF[c];
+    b.onclick = () => { state.shown.has(c) ? state.shown.delete(c) : state.shown.add(c); save(); render(); };
+    chips.appendChild(b);
+  });
+}
+
+function ecdf() {
+  const host = document.getElementById("ecdf"); host.innerHTML = "";
+  const W = Math.max(320, host.clientWidth), H = Math.round(Math.min(380, Math.max(260, W * 0.55)));
+  const m = { l: 40, r: 56, t: 10, b: 34 };
+  const series = CFG.filter(c => state.shown.has(c)).map(c => ({ c, v: lats(state.cap, state.cls, c) })).filter(s => s.v.length);
+  const all = series.flatMap(s => s.v);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Empirical CDF of task latency" }, host);
+  if (!all.length) { el("text", { x: W / 2, y: H / 2, "text-anchor": "middle" }, svg).textContent = "Pick at least one config"; return; }
+  const lo = Math.log10(Math.max(1, Math.min(...all) * 0.9)), hi = Math.log10(Math.max(...all) * 1.05);
+  const X = v => m.l + (Math.log10(v) - lo) / (hi - lo) * (W - m.l - m.r);
+  const Y = p => m.t + (1 - p) * (H - m.t - m.b);
+  [1, 2, 5, 10, 20, 50, 100, 200, 500].filter(t => Math.log10(t) >= lo && Math.log10(t) <= hi).forEach(t => {
+    el("line", { x1: X(t), x2: X(t), y1: m.t, y2: H - m.b, class: "gridl" }, svg);
+    el("text", { x: X(t), y: H - m.b + 16, "text-anchor": "middle" }, svg).textContent = t + "s";
+  });
+  [0, .25, .5, .75, 1].forEach(p => {
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(p), y2: Y(p), class: "gridl" }, svg);
+    el("text", { x: m.l - 6, y: Y(p) + 4, "text-anchor": "end" }, svg).textContent = pct(p);
+  });
+  el("text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg).textContent = "task latency, log scale";
+  const ends = [];
+  series.forEach(({ c, v }) => {
+    const n = v.length; let d = `M${X(v[0])},${Y(0)}`;
+    v.forEach((x, i) => { d += `L${X(x)},${Y(i / n)}L${X(x)},${Y((i + 1) / n)}`; });
+    el("path", { d, fill: "none", stroke: col(c), "stroke-width": 2, "stroke-dasharray": c === "C0a" ? "5 3" : "none",
+      "stroke-linejoin": "round" }, svg);
+    const med = v[Math.floor(n / 2)]; ends.push({ c, y: Y(0.5), x: X(med), med });
+  });
+  // direct labels at the right edge, ordered by median, de-overlapped
+  const lab = series.map(({ c, v }) => ({ c, y: Y(1) + 0, v })).map(s => {
+    const n = s.v.length; const p90 = s.v[Math.floor(0.9 * (n - 1))]; return { c: s.c, y: Y(0.9), x: X(p90), p90 };
+  }).sort((a, b) => a.x - b.x);
+  const yl = []; lab.forEach((s, i) => { yl.push(Math.min(H - m.b - 4, m.t + 10 + i * 15)); });
+  lab.forEach((s, i) => {
+    const ty = yl[i];
+    const t = el("text", { x: W - m.r + 6, y: ty + 4, class: "lbl", fill: col(s.c) }, svg); t.textContent = s.c;
+    t.setAttribute("style", `fill:${col(s.c)}`);
+  });
+  el("text", { x: W - m.r + 6, y: m.t + 2 }, svg).textContent = "by p90";
+  // hover
+  const cross = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--ink-2)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+  hit.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * W / r.width;
+    const t = Math.pow(10, lo + (px - m.l) / (W - m.l - m.r) * (hi - lo));
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    const rows = series.map(({ c, v }) => { let k = 0; while (k < v.length && v[k] <= t) k++; return { c, f: k / v.length }; })
+      .sort((a, b) => b.f - a.f);
+    showTip(`<div style="margin-bottom:4px;color:var(--muted)">Finished within ${t.toFixed(1)} s</div>` +
+      rows.map(r => `<div class="r"><span><i style="background:${col(r.c)}"></i>${r.c}</span><b>${pct(r.f)}</b></div>`).join(""), ev);
+  });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+  const n = series[0].v.length;
+  document.getElementById("ecdfSub").textContent =
+    `${CLSNAME[state.cls]} at ${CAPNAME[state.cap]}: ${n} tasks per config over ${D.caps[state.cap].raw.seeds.length} seeds. Further up and left is faster.`;
+}
+
+function matrix() {
+  const host = document.getElementById("matrix");
+  let h = `<table class="m"><thead><tr><th></th>${CFG.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>`;
+  CFG.forEach(a => {
+    h += `<tr><th class="row">${a}</th>`;
+    CFG.forEach(b => {
+      if (a === b) { h += `<td><div class="cell self">–</div></td>`; return; }
+      const r = pair(state.cap, state.cls, a, b);
+      if (!r) { h += `<td><div class="cell self">n/a</div></td>`; return; }
+      const strong = r.verdict99 === r.verdict && r.verdict !== "none";
+      const on = a === state.row && b === state.colc ? " on" : "";
+      h += `<td><div class="cell ${VCLS[r.verdict]}${on}" tabindex="0" role="button" data-a="${a}" data-b="${b}"
+        style="${strong ? "font-weight:600;outline:1.5px solid var(--ink);outline-offset:-1.5px" : ""}"
+        aria-label="${a} vs ${b}: ${VTEXT[r.verdict]}">${VSYM[r.verdict]}</div></td>`;
+    });
+    h += `</tr>`;
+  });
+  host.innerHTML = h + `</tbody></table>`;
+  host.querySelectorAll(".cell[data-a]").forEach(c => {
+    const a = c.dataset.a, b = c.dataset.b;
+    const pick = () => { state.row = a; state.colc = b; save(); matrix(); pairView(); };
+    c.onclick = pick; c.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+    c.onpointermove = ev => {
+      const r = pair(state.cap, state.cls, a, b);
+      showTip(`<b>${a}</b> vs <b>${b}</b>: ${VTEXT[r.verdict]}${r.verdict99 === r.verdict && r.verdict !== "none" ? " (holds at 99%)" : ""}
+        <div class="r"><span>${a} faster on</span><b>${pct(r.faster)} of tasks</b></div>
+        <div class="r"><span>Mean saved by ${a}</span><b>${f1(r.mean)} s</b></div>
+        <div class="r"><span>Median saved</span><b>${f1(r.d[8])} s</b></div>`, ev);
+    };
+    c.onpointerleave = hideTip;
+  });
+  document.getElementById("key").innerHTML = [
+    ["dominates", "Row dominates"], ["better_part", "Row faster in part"], ["crossing", "Crossing"],
+    ["worse_part", "Row slower in part"], ["dominated", "Row dominated"], ["none", "No difference"]]
+    .map(([v, t]) => `<span><b class="${VCLS[v]}" style="${VCLS[v] ? "" : "background:var(--mid)"}">${VSYM[v]}</b>${t}</span>`).join("") +
+    `<span><b style="outline:1.5px solid var(--ink);outline-offset:-1.5px;background:var(--mid)">≻</b>Also holds at 99%</span>`;
+}
+
+function pairView() {
+  const a = state.row, b = state.colc, r = pair(state.cap, state.cls, a, b);
+  document.getElementById("pairTitle").textContent = `${a} vs ${b}, ${CLSNAME[state.cls].toLowerCase()}, ${CAPNAME[state.cap]}`;
+  const host = document.getElementById("qdiff"); host.innerHTML = "";
+  const st = document.getElementById("pairStats");
+  if (!r) { st.innerHTML = "<span>Not enough tasks in this class.</span>"; return; }
+  const vcol = { dominates: "var(--fast)", better_part: "var(--fast)", dominated: "var(--slow)", worse_part: "var(--slow)" }[r.verdict];
+  st.innerHTML = `
+    <div class="stat"><span>Verdict</span><b><span class="pill ${VCLS[r.verdict]}" style="${vcol ? "" : "background:var(--mid)"}">${VSYM[r.verdict]} ${VTEXT[r.verdict]}</span></b>
+      <small>at 99%: ${VTEXT[r.verdict99].toLowerCase()}</small></div>
+    <div class="stat"><span>${a} faster on</span><b>${pct(r.faster)} of tasks</b><small>95% CI ${pct(r.faster_ci[0])} to ${pct(r.faster_ci[1])}</small></div>
+    <div class="stat"><span>Mean saved by ${a}</span><b>${f1(r.mean)} s</b><small>95% CI ${f1(r.mean_ci[0])} to ${f1(r.mean_ci[1])}</small></div>
+    <div class="stat"><span>Median saved</span><b>${f1(r.d[8])} s</b><small>band ${f1(r.lo[8])} to ${f1(r.hi[8])}</small></div>
+    <div class="stat"><span>Sample</span><b>${r.n} tasks</b><small>${r.seeds} seeds, paired</small></div>`;
+  const W = Math.max(320, host.clientWidth), H = Math.round(Math.min(300, Math.max(220, W * 0.3)));
+  const m = { l: 48, r: 16, t: 12, b: 34 };
+  const P = D.p, ys = [...r.lo99, ...r.hi99, 0];
+  let y0 = Math.min(...ys), y1 = Math.max(...ys); const pad = (y1 - y0) * 0.08 || 1; y0 -= pad; y1 += pad;
+  const X = p => m.l + (p - P[0]) / (P[P.length - 1] - P[0]) * (W - m.l - m.r);
+  const Y = v => m.t + (y1 - v) / (y1 - y0) * (H - m.t - m.b);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Quantile difference with confidence band" }, host);
+  const step = niceStep((y1 - y0) / 5);
+  for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) {
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), class: "gridl" }, svg);
+    el("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, svg).textContent = (Math.abs(v) < 1e-9 ? 0 : +v.toFixed(1)) + "s";
+  }
+  [0.1, 0.25, 0.5, 0.75, 0.9].forEach(p => el("text", { x: X(p), y: H - m.b + 16, "text-anchor": "middle" }, svg).textContent = "p" + Math.round(p * 100));
+  el("text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg).textContent = "percentile of task latency";
+  const area = (lo, hi) => P.map((p, i) => `${i ? "L" : "M"}${X(p)},${Y(hi[i])}`).join("") + P.slice().reverse().map((p, j) => `L${X(p)},${Y(lo[P.length - 1 - j])}`).join("") + "Z";
+  const tone = r.mean >= 0 ? "var(--fast)" : "var(--slow)";
+  el("path", { d: area(r.lo99, r.hi99), fill: tone, "fill-opacity": 0.1, stroke: "none" }, svg);
+  el("path", { d: area(r.lo, r.hi), fill: tone, "fill-opacity": 0.22, stroke: "none" }, svg);
+  el("line", { x1: m.l, x2: W - m.r, y1: Y(0), y2: Y(0), class: "zero" }, svg);
+  el("path", { d: P.map((p, i) => `${i ? "L" : "M"}${X(p)},${Y(r.d[i])}`).join(""), fill: "none", stroke: tone, "stroke-width": 2 }, svg);
+  P.forEach((p, i) => el("circle", { cx: X(p), cy: Y(r.d[i]), r: 2.5, fill: tone, stroke: "var(--surface)", "stroke-width": 1.5 }, svg));
+  el("text", { x: m.l + 6, y: Y(0) - 6 }, svg).textContent = `${a} faster ↑`;
+  el("text", { x: m.l + 6, y: Y(0) + 14 }, svg).textContent = `${b} faster ↓`;
+  const cross = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--ink-2)", visibility: "hidden" }, svg);
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+  hit.addEventListener("pointermove", ev => {
+    const rc = svg.getBoundingClientRect(); const px = (ev.clientX - rc.left) * W / rc.width;
+    let i = Math.round((px - m.l) / (W - m.l - m.r) * (P.length - 1)); i = Math.max(0, Math.min(P.length - 1, i));
+    cross.setAttribute("x1", X(P[i])); cross.setAttribute("x2", X(P[i])); cross.setAttribute("visibility", "visible");
+    showTip(`<div style="color:var(--muted);margin-bottom:4px">p${Math.round(P[i] * 100)}</div>
+      <div class="r"><span>${a} saves</span><b>${f1(r.d[i])} s</b></div>
+      <div class="r"><span>95% band</span><b>${f1(r.lo[i])} to ${f1(r.hi[i])}</b></div>
+      <div class="r"><span>99% band</span><b>${f1(r.lo99[i])} to ${f1(r.hi99[i])}</b></div>`, ev);
+  });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+}
+function niceStep(x) { const e = Math.pow(10, Math.floor(Math.log10(x))); const f = x / e; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * e; }
+
+function claims() {
+  const rows = [];
+  Object.keys(D.caps).forEach(cap => D.classes.forEach(cls => CFG.forEach(a => CFG.forEach(b => {
+    if (a === b) return; const r = pair(cap, cls, a, b); if (!r) return;
+    const main = ["all", "fanout", "react"].includes(cls);
+    if (r.verdict === "dominates") rows.push({ cap, cls, a, b, r, kind: r.verdict99 === "dominates" ? 0 : 1 });
+    else if (main && r.verdict === "better_part" && r.verdict99 === "better_part") rows.push({ cap, cls, a, b, r, kind: 2 });
+  }))));
+  rows.sort((x, y) => x.kind - y.kind || Object.keys(D.caps).indexOf(x.cap) - Object.keys(D.caps).indexOf(y.cap) || y.r.mean - x.r.mean);
+  const KIND = ["Dominates at 99%", "Dominates at 95%", "Faster in part, never slower (99%)"];
+  const counts = [0, 1, 2].map(k => rows.filter(r => r.kind === k).length);
+  document.getElementById("claimsSub").textContent =
+    `${counts[0] + counts[1]} full first-order dominance results (${counts[0]} also at 99%), all in single task classes; ` +
+    `${counts[2]} "faster in part, never significantly slower" results at 99% on whole task groups. Click a row to plot it.`;
+  document.getElementById("claims").innerHTML = `<table class="c"><thead><tr><th>Claim</th><th>Memory</th><th>Tasks</th>
+    <th>Faster</th><th>Than</th><th style="text-align:right">Mean saved</th><th style="text-align:right">Median saved</th>
+    <th style="text-align:right">Faster on</th><th style="text-align:right">n</th></tr></thead><tbody>` +
+    rows.map((x, i) => `<tr data-i="${i}"><td>${KIND[x.kind]}</td><td>${CAPNAME[x.cap]}</td><td>${CLSNAME[x.cls]}</td>
+      <td><b>${x.a}</b></td><td>${x.b}</td><td class="num">${f1(x.r.mean)} s</td><td class="num">${f1(x.r.d[8])} s</td>
+      <td class="num">${pct(x.r.faster)}</td><td class="num">${x.r.n}</td></tr>`).join("") + `</tbody></table>`;
+  document.querySelectorAll("#claims tr[data-i]").forEach(tr => tr.onclick = () => {
+    const x = rows[+tr.dataset.i]; Object.assign(state, { cap: x.cap, cls: x.cls, row: x.a, colc: x.b }); save(); render();
+    document.getElementById("pairTitle").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  });
+}
+
+function render() { controls(); ecdf(); matrix(); pairView(); }
+document.getElementById("meta").textContent =
+  `Qwen3-8B on 4×A40, 1 task/s for 90 s, fan-out and ReAct agent tasks. Seeds so far: ` +
+  Object.entries(D.caps).map(([k, v]) => `${CAPNAME[k]} ${v.raw.seeds.map(s => s.slice(1)).join(", ")}`).join(" · ") + `. Data as of ${D.generated}.`;
+document.getElementById("defs").innerHTML = CFG.map(c => `<div><i style="width:14px;height:3px;border-radius:2px;background:${col(c)};display:inline-block;flex:none;align-self:center"></i><code>${c}</code><span>${DEF[c]}</span></div>`).join("");
+if (!D.caps[state.cap]) state.cap = Object.keys(D.caps)[0];
+render(); claims();
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { ecdf(); pairView(); }, 120); });
+</script>
