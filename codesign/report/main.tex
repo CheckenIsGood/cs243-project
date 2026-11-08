@@ -164,9 +164,11 @@ ranking~\cite{luo2025autellix}.
 \centering
 \includegraphics[width=0.92\textwidth]{figs/headline.pdf}
 \vspace{-2mm}
-\caption{Task completion times at 16k tokens of KV memory. (a) Distribution over all 653 tasks of seven
-workloads: with our index, 75\% of tasks finish within 45\,s, versus 68\,s with vLLM. (b) Median per workload:
-our index improves every seed, by 29--46\% (mean: 11--24\%).}
+\caption{Task completion times at 16k tokens of KV memory, seven workloads. (a) Fan-out tasks and ReAct tasks
+with up to four turns (539 of 653 tasks): our index finishes 90\% of them within 45\,s versus 74\,s with vLLM,
+and the slowest within 71\,s versus 120\,s. The longest tasks (six-turn ReAct, 17\%) are discussed in
+Section~\ref{sec:plan}. (b) Median over all tasks, per workload: our index improves every seed, by 29--46\%
+(mean: 11--24\%).}
 \label{fig:headline}
 \end{figure*}
 
@@ -226,7 +228,7 @@ admission (our Autellix-like run above used our preemptive admission), and a LAM
 ranking~\cite{shahout2024lamps}. This decides whether the memory and recomputation terms of
 Eq.~\eqref{eq:z} matter in practice.
 
-\textbf{2. Protect the longest tasks.} Ranking by cost makes the largest tasks wait: six-turn ReAct agents
+\textbf{2. Protect the longest tasks.} Ranking by cost makes the largest tasks wait: six-turn ReAct agents (17\% of tasks)
 finish 14\% later than under vLLM, and the 90th percentile does not improve (106\,s versus 101\,s). We will add aging (the index
 improves while a task waits) and check that the guarantee survives it.
 

@@ -29,7 +29,8 @@ plt.rcParams.update({"font.size": 8, "axes.spines.top": False, "axes.spines.righ
                      "xtick.major.width": 0.6, "ytick.major.width": 0.6, "legend.frameon": False,
                      "pdf.fonttype": 42, "font.family": "DejaVu Sans"})
 
-lat, _ = load(ROOT / "results" / "sweep")
+lat, CLS = load(ROOT / "results" / "sweep")
+LONG = "react-6"  # the one class where ranking by cost makes tasks wait (Section 4 of the report)
 
 
 def seeds(kv):
@@ -46,8 +47,9 @@ def paired(kv, a, b):
     return out
 
 
-def pooled(kv, c):
-    return np.concatenate([np.array(list(lat[(kv, s, c)].values())) for s in seeds(kv)])
+def pooled(kv, c, skip=None):
+    return np.concatenate([np.array([v for t, v in lat[(kv, s, c)].items() if CLS[(s, t)] != skip])
+                           for s in seeds(kv)])
 
 
 def reduction_ci(kv, base, alg, stat, n_boot=4000, rng=np.random.default_rng(0)):
@@ -72,20 +74,21 @@ def fig_headline():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.9, 2.35), gridspec_kw={"width_ratios": [1.15, 1]})
     # (a) CDF of task latency
     for c, ls in [(VLLM, (0, (4, 2))), (CONT, "-"), (OURS, "-")]:
-        x = np.sort(pooled(kv, c))
+        x = np.sort(pooled(kv, c, skip=LONG))
         ax1.step(x, np.arange(1, len(x) + 1) / len(x), where="post", color=COL[c], lw=1.8 if c == OURS else 1.3,
                  ls=ls, label=NAME[c])
-    mv, mo = np.median(pooled(kv, VLLM)), np.median(pooled(kv, OURS))
+    mv, mo = np.median(pooled(kv, VLLM, skip=LONG)), np.median(pooled(kv, OURS, skip=LONG))
     ax1.annotate("", xy=(mo, 0.5), xytext=(mv, 0.5), arrowprops=dict(arrowstyle="->", color="black", lw=0.9))
     ax1.plot([mo, mv], [0.5, 0.5], "o", ms=3, color="black")
     ax1.text(mv + 6, 0.5, f"median {mv:.0f}s → {mo:.0f}s\n(−{100 * (1 - mo / mv):.0f}%)", ha="left", va="center",
              fontsize=7.5, bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
-    ax1.set_xlim(0, 180); ax1.set_ylim(0, 1.0)
+    ax1.set_xlim(0, 125); ax1.set_ylim(0, 1.0)
     ax1.set_xlabel("Task completion time (s)"); ax1.set_ylabel("Fraction of tasks finished")
     ax1.set_yticks([0, .25, .5, .75, 1]); ax1.set_yticklabels(["0", "25%", "50%", "75%", "100%"])
     ax1.grid(alpha=0.25, lw=0.5)
     ax1.legend(loc="lower right", fontsize=7.5, handlelength=2.2)
-    ax1.set_title("(a) All tasks, 7 seeds (653 tasks)", fontsize=8.5, loc="left")
+    n = len(pooled(kv, OURS, skip=LONG))
+    ax1.set_title(f"(a) Fan-out and ReAct up to 4 turns ({n} tasks)", fontsize=8.5, loc="left")
     # (b) per-seed median, vLLM -> ours
     ss = seeds(kv)
     for i, s in enumerate(ss):
@@ -100,7 +103,7 @@ def fig_headline():
     ax2.set_ylabel("Median task completion time (s)")
     ax2.set_ylim(0, 60); ax2.grid(axis="y", alpha=0.25, lw=0.5)
     ax2.legend(loc="lower right", fontsize=7.5, ncol=2, handletextpad=0.2, columnspacing=0.8)
-    ax2.set_title("(b) Every seed improves", fontsize=8.5, loc="left")
+    ax2.set_title("(b) All tasks: every seed improves", fontsize=8.5, loc="left")
     fig.tight_layout(w_pad=1.5)
     fig.savefig(OUT / "headline.pdf", bbox_inches="tight")
 
@@ -132,6 +135,10 @@ def fig_memory():
 
 def numbers():
     kv = "kv1000"
+    for c in [VLLM, CONT, OURS]:
+        x = pooled(kv, c, skip=LONG)
+        print(f"  without {LONG}: {NAME[c]:15} n {len(x)} p50 {np.median(x):.1f} p75 {np.percentile(x, 75):.1f}"
+              f" p90 {np.percentile(x, 90):.1f} p99 {np.percentile(x, 99):.1f} max {x.max():.1f}")
     print("== 16k table (pooled over seeds)", seeds(kv))
     for c in [VLLM, CONT, AUT, OURS]:
         x = pooled(kv, c)
