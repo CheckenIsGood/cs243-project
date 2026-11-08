@@ -1,23 +1,30 @@
 \documentclass{article}
+\usepackage[T1]{fontenc} % XeTeX/Tectonic: needed so icml2025's Times fonts (incl. bold/italic) load
 \usepackage{microtype}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{tikz}
+\usepackage[T1]{fontenc}
+
 \usetikzlibrary{arrows.meta,positioning,fit}
 \usepackage[accepted]{icml2025}
 \newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newcommand{\OPT}{\mathrm{OPT}}
 \icmltitlerunning{Scheduling LLM Agents under KV-Cache Pressure (Midterm Report)}
 
 \begin{document}
 \twocolumn[
 \icmltitle{Provably Good Scheduling of LLM Agents under KV-Cache Pressure}
 \begin{icmlauthorlist}
-\icmlauthor{[Author names]}{h}
+\icmlauthor{Stephen Gwon}{h}
+\icmlauthor{Eric Sui}{h}
+\icmlauthor{Jonathan Wu}{h}
 \end{icmlauthorlist}
 \icmlaffiliation{h}{Harvard University, CS 243 (Fall 2026). Midterm report}
-\icmlcorrespondingauthor{[Author]}{[email]}
+\icmlcorrespondingauthor{Stephen Gwon}{stephengwon@gmail.com}
 \icmlkeywords{LLM serving, agents, scheduling, KV cache, approximation algorithms}
 \vskip 0.3in
 ]
@@ -25,18 +32,16 @@
 
 \begin{abstract}
 LLM agents alternate between model calls and tool calls of unpredictable length, and many agents share one GPU.
-When KV-cache memory is scarce, the serving engine's choice of \emph{which agent to serve next} decides how long
-every task takes, yet today's engines schedule individual requests first-come-first-served and agent-aware
-systems use heuristics without guarantees. We model agent serving as stochastic scheduling of task graphs with
-random tool delays on a batched engine with bounded KV memory, and derive a \emph{task index} $Z'$ that ranks
-whole agent tasks by their total cost to the GPU, including the memory they occupy and the recomputation that
-tool waits cause. We prove that scheduling by this index is within a constant factor of the optimal
-non-anticipatory policy (factor 2, tight, without memory limits; about 5--7 with KV memory at our measured A40
-parameters); two independent verification passes checked every proof. We implemented the index on vLLM as a
-drop-in scheduler plug-in and client layer. On four A40 GPUs serving Qwen3-8B to multi-hop question-answering
-agents under KV pressure, it cuts the \textbf{median task completion time by 37\%} (42\,s to 27\,s) and the mean
-by 19\% relative to vLLM, improves \textbf{every one of seven workloads}, and beats a Continuum-style agent
-scheduler by 47\% on the median.
+When KV-cache memory is scarce, the order in which the engine serves agents decides how long every task takes.
+Today's engines schedule individual requests first-come-first-served, and agent-aware systems use heuristics
+without guarantees. We model agent serving as stochastic scheduling of task graphs with random tool delays on a
+batched engine with bounded KV memory, and derive a \emph{task index} $Z'$ that ranks whole tasks by their cost
+to the GPU, including the memory they hold and the recomputation that preemption causes. Scheduling by this index
+is within a factor of 2 of the optimal non-anticipatory policy without memory limits, and within a constant factor
+with KV memory, given $3\times$ engine speed and extra memory. Used as the request priority in vLLM, the index
+cuts the \textbf{median task completion time by 37\%} (42\,s to 27\,s) and the mean by 19\% for multi-hop
+question-answering agents on A40 GPUs under KV pressure, improves \textbf{all seven workloads}, and beats a
+Continuum-style agent scheduler by 47\% on the median.
 \end{abstract}
 
 \section{Problem}
@@ -44,75 +49,116 @@ scheduler by 47\% on the median.
 An LLM agent task is a small program: it calls the model, calls tools (search, code, APIs) whose latency is long
 and random compared with a model step, often several in parallel~\cite{kim2024llmcompiler}, and calls the model
 again on the results~\cite{yao2023react}. A serving engine such as vLLM~\cite{kwon2023vllm} sees only the
-individual model calls. It admits them first-come-first-served (FCFS), and while an agent waits for a tool, its
-KV cache either occupies scarce GPU memory or is evicted and later recomputed.
+individual model calls and admits them first-come-first-served (FCFS). While an agent waits for a tool, its KV
+cache either occupies scarce GPU memory or is evicted and later recomputed.
 
-\textbf{Why scheduling matters here.} Under memory pressure only a few agents fit on the GPU at once, so the
-order in which tasks are served dominates latency. Per-request FCFS is a poor order for agents: a task's latency
-is set by its \emph{last} model call, and a long task that arrives first blocks many short tasks behind it, each
-of which also holds memory across its tool waits.
+Under memory pressure only a few agents fit on the GPU at once, so the order in
+which tasks are served dominates latency. Per-request FCFS is a poor order for agents: a task's latency is set by
+its \emph{last} model call, and a long task that arrives first blocks many short tasks behind it.
 
-\textbf{Why it is new.} Agent-aware systems schedule at the program level, with heuristics:
-Continuum~\cite{li2025continuum} pins an agent's KV cache for a time-to-live during tool calls and serves
-programs FCFS, Autellix~\cite{luo2025autellix} ranks programs by least attained service, and
-LAMPS~\cite{shahout2024lamps} ranks requests by memory consumption over time and chooses whether to keep or
-discard memory during API calls. None comes with a performance guarantee. On the theory side, recent online
-algorithms for KV-constrained LLM scheduling~\cite{jaillet2025online} treat single requests, with no tool calls,
-task graphs or random durations, and classical stochastic scheduling~\cite{mohring1999approximation,
-skutella2005stochastic} has no batching, KV memory or tool delays. To our knowledge, ours is the first
-scheduling policy for agent serving with a provable approximation guarantee.
+Currently, there exists several agent-aware systems that schedule whole programs with heuristics. For example,
+Continuum~\cite{li2025continuum} pins an agent's KV cache with a time-to-live during tool calls and serves programs
+FCFS, Autellix~\cite{luo2025autellix} ranks programs by least attained service, and
+LAMPS~\cite{shahout2024lamps} ranks requests by memory use over time. None has a performance guarantee. On the
+theory side, online algorithms for KV-constrained LLM scheduling~\cite{jaillet2025online} treat single requests,
+without tool calls, task graphs or random durations, and classical stochastic
+scheduling~\cite{mohring1999approximation,skutella2005stochastic} has no batching, KV memory or tool delays. To
+our knowledge, ours is the first scheduling policy for agent serving with a provable approximation guarantee.
 
-\textbf{Challenges.} (1) Tool delays and output lengths are random and unknown when decisions are made. (2) GPU
-time and KV memory are coupled: evicting a waiting agent frees memory but costs recomputation, and a batched step
-slows down as more sequences join it. (3) Latency belongs to whole tasks, while the engine schedules individual
-calls. (4) A guarantee must survive contact with a real engine: vLLM's admission, preemption and caching rules.
+There are several challenges we faced during the project. First, tool delays are random and unknown when decisions are made. 
+Second, GPU time and KV memory are coupled: evicting a waiting agent frees memory but costs recomputation, 
+and a batched step slows down as more sequences join it. Third, latency belongs to whole tasks, while the engine schedules individual calls.
+Lastly, a guarantee must survive vLLM's actual admission, preemption and caching rules.
 
 \section{Design}
 \label{sec:design}
 
-\textbf{Model.} A task $J$ arrives at time $r_J$ with weight $w_J$ and is a directed acyclic graph of LLM
-nodes; tool calls are random delays on the edges. Node $y$ has a new prompt of $q_y$ tokens, a context of
-$\rho_y$ tokens carried from earlier calls, and at most $X_y$ output tokens. The engine runs batched steps of
-duration $a + cB + \alpha P$ for $B$ decoding sequences and $P$ prefill tokens, and the KV cache holds at most
-$M$ tokens. On our A40 with Qwen3-8B we measured $a = 27.8$\,ms, $c = 0.54$\,ms and $\alpha = 0.11$\,ms per
-token. The objective is the expected weighted sum of task completion times, $\mathbb{E}[\sum_J w_J C_J]$.
+\textbf{Model.} A task $J$ arrives at time $r_J$ with weight $w_J$ and is a directed acyclic graph of LLM calls
+(nodes); tool calls are random delays on its edges. Node $y$ has a new prompt of $q_y$ tokens, $\rho_y$ tokens of
+context from earlier calls, and $X_y$ output tokens, so its peak KV footprint is $\ell_y = \rho_y + q_y + X_y$;
+$L_{\max}$ is the largest footprint. A batched step that decodes $B$ sequences and prefills $P$ tokens takes
+$a + cB + \alpha P$ seconds, and the KV cache holds $M'$ tokens. For Qwen3-8B on an A40 we measured
+$a = 27.8$\,ms, $c = 0.54$\,ms and $\alpha = 0.11$\,ms per token. The objective is the expected weighted sum of
+task completion times, $\mathbb{E}[\sum_J w_J C_J]$. The benchmark $\OPT$ is the best non-anticipatory policy,
+which knows the distributions of tool delays but not their outcomes.
 
-\textbf{The task index.} Each task gets one number when it arrives,
+\textbf{The task index.} Each task gets one number when it arrives:
 \begin{equation}
-Z'_J = \sum_{y \in J} \Big[\alpha(q_y+\rho_y) + cX_y + \alpha(\ell_y + L_{\max}) + \frac{a X_y \ell_y}{M'}\Big],
+Z'_J = \sum_{y \in J} \Big[\alpha(q_y+\rho_y) + cX_y + \alpha(\ell_y + L_{\max}) + \frac{a X_y \ell_y}{M}\Big],
 \label{eq:z}
 \end{equation}
-where $\ell_y = \rho_y + q_y + X_y$ is the node's peak KV footprint, $L_{\max}$ the largest footprint and $M'$
-the usable memory. The four terms are the node's prefill work (including recomputing evicted context after a
-tool wait), its decode work, a charge for the work it may displace when it is admitted, and its share of the
-memory-time area. Tasks are served in increasing order of $Z'_J/w_J$, a memory-aware generalization of Smith's
-rule~\cite{smith1956various}. The index is fixed for the task's lifetime, so a task never loses its place to
-newer arrivals of the same size.
+where $M = M' - L_{\max}$. The four terms are the node's prefill work (including recomputing context evicted
+during a tool wait), its decode work, the recomputation its arrival can cause by preempting lower-priority
+requests, and its memory-time area. Each term bounds one way the task can delay lower-priority tasks
+(Appendix~\ref{app:thm2}). Tasks are served in increasing order of $Z'_J/w_J$, a memory-aware version of Smith's
+rule~\cite{smith1956various}. The index is computed once, from token-count estimates, and never changes.
+Table~\ref{tab:z} gives its value for each task shape we evaluate.
 
-\textbf{Guarantees.} Let $\mathrm{OPT}$ be the best non-anticipatory policy (it knows distributions, not the
-future).
+\begin{table}[t]
+\caption{The index $Z'$ (seconds) and its four terms for each task shape at 16k tokens of KV memory
+($L_{\max} = 8{,}184$, $M = 7{,}816$), from the token-count estimates used by the client.}
+\label{tab:z}
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+Task & Prefill & Decode & Preempt & Area & $Z'$ \\
+\midrule
+Fan-out, 2 & 0.26 & 0.10 & 2.15 & 0.63 & 3.14 \\
+Fan-out, 4 & 0.49 & 0.10 & 2.38 & 1.08 & 4.05 \\
+Fan-out, 8 & 0.94 & 0.10 & 2.83 & 1.99 & 5.87 \\
+ReAct, 2   & 0.42 & 0.09 & 3.24 & 0.79 & 4.54 \\
+ReAct, 4   & 1.32 & 0.14 & 6.02 & 2.28 & 9.76 \\
+ReAct, 6   & 2.72 & 0.19 & 9.30 & 4.52 & 16.73 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Guarantees.}
 \begin{theorem}[no memory limit]
-For task graphs with known node sizes and arbitrary random tool delays, on $m$ parallel servers, the online
-preemptive policy that runs tasks in order of $w_J/W_J$ (total work $W_J$) satisfies
-$\mathbb{E}[\sum w_J C_J] \le 2\,\mathrm{OPT}$, and the factor 2 is tight.
+\label{thm:nomem}
+For task graphs with known node sizes and arbitrary random tool delays on $m$ parallel machines, the online
+preemptive policy that serves tasks in decreasing order of $w_J/W_J$, where $W_J$ is the total work of $J$,
+satisfies $\mathbb{E}[\sum w_J C_J] \le 2\,\OPT$.
 \end{theorem}
 \begin{theorem}[batched engine with KV memory]
-In the engine model above, the policy that ranks tasks by $w_J/Z'_J$, admits the longest priority prefix of
-requests whose reservations fit in memory, and evicts KV during tool waits, satisfies
-$\mathbb{E}[\sum w_J C_J] \le c\cdot\mathrm{OPT}$ with $3\times$ engine speed and $M + L_{\max}$ memory, where
-$c$ depends only on the ratio of recomputation to useful work; $c \approx 5$--$7$ at our measured parameters for
-$M$ between 32k and 128k tokens.
+\label{thm:kv}
+Suppose token counts are known when a task arrives. Let policy $P$ serve tasks in increasing order of $Z'_J/w_J$,
+admit the longest priority prefix of ready requests whose footprints fit in $M'$, preempt the lower-priority
+requests that no longer fit, and evict KV during tool waits. On the fluid engine at $3\times$ speed,
+$\mathbb{E}[\sum w_J C_J] \le (1 + \beta + 2\lambda)\,\OPT$, where $\OPT$ runs at speed 1 with memory $M$,
+$\beta = \max_y \alpha\rho_y/(\alpha q_y + aX_y)$ is the largest share of recomputed context, and
+$\lambda = \max_J Z'_J/(\sigma_J + A_J/M)$ compares each task's index with its GPU work $\sigma_J$ and memory-time
+area $A_J$.
 \end{theorem}
-Theorem~1 extends Megow and Schulz~\cite{megow2004online} to task graphs with random tool delays: delays enter
-only through the critical path. Theorem~2 is new; its key step charges every preemption to the arrival that
-caused it. We also proved a 2-approximation for chain tasks with random sizes (a Gittins-index variant), that
-keeping KV across tool waits never breaks Theorem~2 if kept KV is evicted first, and that the best keep/evict
+Theorem~\ref{thm:nomem} extends Megow and Schulz~\cite{megow2004online} to task graphs with random tool delays.
+The delays enter only through the critical path, and their lower bound shows that the factor 2 is tight.
+Theorem~\ref{thm:kv} is new; its key step charges every preemption to the arrival that caused it. For our workload
+at 16k tokens of memory the constant is 9.5. This is a worst case: on 200 small instances checked exactly, the
+policy stays within a factor of 1.45 of the lower bounds used in the proof. Proofs are in
+Appendices~\ref{app:thm1} and~\ref{app:thm2}.
+
+Theorem~\ref{thm:kv} assumes token counts are known, but output lengths are random. For chain tasks we proved two
+extensions with Gittins-index versions of the policy. If output lengths are revealed token by token and memory
+never binds, the ratio is $1 + \beta + \lambda'$, where $\lambda'$ keeps only the prefill and decode terms of $Z'$.
+With bounded memory, reserving each node's maximum output length gives a constant that also grows with the
+variability of output lengths. We also proved a 2-approximation for chain tasks with random sizes, that keeping KV
+across tool waits preserves Theorem~\ref{thm:kv} if kept KV is evicted first, and that the best keep-or-evict
 time-to-live for a known delay distribution is within $e/(e-1)$ of clairvoyant. Two independent verification
-passes checked every proof; each inequality is also checked exactly on small instances, and the algebra with
-the Z3 solver (7{,}772 automated tests).
+passes audited the proofs, and every inequality is also checked exactly on small instances, with rational
+arithmetic and the Z3 solver.
+
+Lower bounds explain the model's choices. A policy that never evicts a waiting agent's KV has no constant ratio,
+because memory then caps how many agents can wait on tools at once; evicting lets every tool wait overlap. Under
+adversarial arrivals no online policy has a constant ratio for flow time~\cite{jaillet2025online}, so we bound
+completion time. With random node sizes, any fixed-priority policy can lose a factor $1 + \Delta$ against a
+preemptive optimum, where $\Delta$ bounds the squared coefficient of variation of the sizes; this is why the
+random-length results use Gittins indices. The $3\times$ speed comes from the analysis, which emulates a separate
+prefill server and decode machines on one engine; we do not know whether it is necessary.
 
 \begin{figure}[t]
 \centering
+\resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[font=\footnotesize, node distance=4mm and 5mm,
   box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, minimum height=8mm},
   ours/.style={box, fill=blue!8, draw=blue!60!black},
@@ -126,49 +172,47 @@ the Z3 solver (7{,}772 automated tests).
 \draw[arr] (client) -- (sched);
 \draw[arr] (sched) -- (engine);
 \draw[arr, {Stealth[length=2mm]}-{Stealth[length=2mm]}] (agents) -- node[right]{tool calls} (tools);
-\end{tikzpicture}
+\end{tikzpicture}}
 \caption{Implementation. The client layer computes each task's index once and attaches it as the priority of
-every model call the task makes; a scheduler plug-in loaded with \texttt{--scheduler-cls} applies it inside
-vLLM. Shaded boxes are ours.}
+every model call of the task; a scheduler plug-in loaded with \texttt{--scheduler-cls} applies it inside vLLM.
+Shaded boxes are ours.}
 \label{fig:design}
 \end{figure}
 
-\textbf{Implementation (Figure~\ref{fig:design}).} The system needs no fork of vLLM. A client layer (130
-lines) computes $Z'_J$ from token-count estimates when a task arrives and sends it as the priority of each of the
-task's model calls. A scheduler subclass (360 lines), loaded through vLLM~0.32's \texttt{--scheduler-cls}
-option, adds the engine rules the theory uses: priority-prefix admission with preemption, a single prefill per
-step, a low-priority class for speculative prefills, a soft time-to-live for KV kept during tool waits, and
-protection of cached prefixes that queued requests need. All rules are switches, so baselines run through the
-same code. In this report \emph{Ours} is the index on top of vLLM's priority scheduler; the engine rules are
-evaluated as ablations (Section~\ref{sec:plan}).
+\textbf{Implementation (Figure~\ref{fig:design}).} The system needs no fork of vLLM. A client layer (140 lines)
+computes $Z'_J$ from per-shape token-count estimates when a task arrives and sends it as the priority of each of
+the task's model calls. A scheduler subclass (360 lines), loaded through vLLM~0.32's \texttt{--scheduler-cls}
+option, implements the rest of policy $P$ (priority-prefix admission with preemption, one prefill per step) and
+rules for KV kept during tool waits. Every rule is a switch, so the baselines run through the same code. In this
+report, \emph{Ours} is the index on vLLM's stock priority scheduler. This is not exactly policy $P$: stock vLLM
+never preempts a running request to admit a waiting one, so Theorem~\ref{thm:kv} does not directly cover it. The
+full policy $P$ is evaluated as an ablation (Section~\ref{sec:plan}).
 
 \section{Initial Evaluation}
 \label{sec:eval}
 
-\textbf{Setup.} Four NVIDIA A40 GPUs (48\,GB), one vLLM~0.32 server per GPU, Qwen3-8B~\cite{qwen3} in bf16.
-Agents answer multi-hop HotpotQA questions~\cite{yang2018hotpotqa} with a search tool over a pool of
-HotpotQA paragraphs, in two shapes: \emph{fan-out} (plan, then 2, 4 or 8 parallel searches, then answer) and
-\emph{ReAct} (2, 4 or 6 search-and-reason turns). Search results are up to 1{,}000 tokens; tool delays are
-uniform on 0.5--4\,s with probability 0.7 and on 4--12\,s otherwise. Tasks arrive as a Poisson process at 1 per
-second for 90\,s (about 93 tasks per run). To emulate the memory pressure of a busier multi-tenant server, we
-cap the KV cache at 16k tokens (full capacity is 167k). Each \emph{seed} fixes the arrival times, task mix and
-tool delays, and every scheduler sees exactly the same seed, so comparisons are paired task by task. We report
-task completion time, from arrival to final answer.
+Our setup used four NVIDIA A40 GPUs (48\,GB), one vLLM~0.32 server per GPU, Qwen3-8B~\cite{qwen3} in bf16.
+Agents answer multi-hop HotpotQA questions~\cite{yang2018hotpotqa} with a search tool over HotpotQA paragraphs,
+in two shapes: \emph{fan-out} (plan, then 2, 4 or 8 parallel searches, then answer) and \emph{ReAct} (2, 4 or 6
+search-and-reason turns). Search results are up to 1{,}000 tokens; tool delays are uniform on 0.5--4\,s with
+probability 0.7 and on 4--12\,s otherwise. Tasks arrive as a Poisson process at 1 per second for 90\,s (about 93
+tasks per run). To emulate the memory pressure of a busy multi-tenant server, we cap the KV cache at 16k tokens
+(full capacity: 167k). Each \emph{seed} fixes the arrival times, task mix and tool delays, and all schedulers see
+the same seeds, so comparisons are paired task by task. We report task completion time, from arrival to final
+answer.
 
 \textbf{Baselines.} \emph{vLLM}: stock scheduler, requests FCFS. \emph{Continuum-like}: our reimplementation of
-Continuum's policy~\cite{li2025continuum}: KV pinned during tool calls with a time-to-live, programs served
-FCFS, pinned programs first. \emph{Autellix-like}: Autellix's program-level least-attained-service
-ranking~\cite{luo2025autellix}.
+Continuum~\cite{li2025continuum}: KV pinned during tool calls with a time-to-live, programs served FCFS, pinned
+programs first. \emph{Autellix-like}: program-level least-attained-service ranking~\cite{luo2025autellix}.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.92\textwidth]{figs/headline.pdf}
 \vspace{-2mm}
-\caption{Task completion times at 16k tokens of KV memory, seven workloads. (a) Fan-out tasks and ReAct tasks
-with up to four turns (539 of 653 tasks): our index finishes 90\% of them within 45\,s versus 74\,s with vLLM,
-and the slowest within 71\,s versus 120\,s. The longest tasks (six-turn ReAct, 17\%) are discussed in
-Section~\ref{sec:plan}. (b) Median over all tasks, per workload: our index improves every seed, by 29--46\%
-(mean: 11--24\%).}
+\caption{Task completion times at 16k tokens of KV memory, seven workloads. (a) Fan-out tasks and ReAct tasks with
+up to four turns (539 of 653 tasks): the index finishes 90\% of them within 45\,s versus 74\,s with vLLM, and the
+slowest within 71\,s versus 120\,s. Six-turn ReAct tasks are discussed in Section~\ref{sec:plan}. (b) Median over
+all tasks, per workload: the index improves every workload, by 29--46\% (mean: 11--24\%).}
 \label{fig:headline}
 \end{figure*}
 
@@ -193,79 +237,208 @@ Autellix-like$^{*}$ & 65.9 & 47.3 & 49\% \\
 {\footnotesize $^{*}$Run with our preemptive admission rule.}
 \end{table}
 
-\textbf{Results.} Figure~\ref{fig:headline} and Table~\ref{tab:main} show the main result. Under memory
-pressure, scheduling by the task index cuts the median completion time from 42\,s to 27\,s ($-37\%$, 95\% CI
-31--43\%) and the mean from 50.3\,s to 40.6\,s ($-19\%$, CI 15--23\%), and 79\% of tasks finish earlier. The
-improvement holds on every one of the seven workloads (Figure~\ref{fig:headline}b). Against the
-Continuum-like scheduler, the median drops by 47\% (CI 36--54\%) and the mean by 22\%. Confidence intervals
-come from a two-level bootstrap that resamples whole workloads and then tasks, so they include run-to-run
-variation.
-
-The gain is broad across task types. For fan-out tasks the mean falls by 34\% (32.9\,s to 21.6\,s), and for
-two-search fan-outs and two-turn ReAct agents by 41\% and 45\%. Fan-out tasks finish twice as fast as under the
-Continuum-like scheduler (21.6\,s versus 42.8\,s on average).
+\textbf{Results.} Figure~\ref{fig:headline} and Table~\ref{tab:main} show the main result. Under memory pressure,
+the index cuts the median completion time from 42\,s to 27\,s ($-37\%$, 95\% CI 31--43\%) and the mean from
+50.3\,s to 40.6\,s ($-19\%$, CI 15--23\%); 79\% of tasks finish earlier, and every workload improves
+(Figure~\ref{fig:headline}b). Against the Continuum-like scheduler, the median drops by 47\% (CI 36--54\%) and the
+mean by 22\%. The confidence intervals come from a two-level bootstrap that resamples workloads and then tasks, so
+they include run-to-run variation. Fan-out tasks gain the most: their mean falls by 34\% (32.9\,s to 21.6\,s),
+half of the Continuum-like scheduler's 42.8\,s.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figs/memory.pdf}
 \vspace{-5mm}
 \caption{Latency reduction of our index over vLLM as KV memory grows (95\% CIs). The tighter the memory, the
-larger the gain; with ample memory scheduling order barely matters and the index costs nothing.}
+larger the gain; with ample memory the order barely matters and the index costs nothing.}
 \label{fig:memory}
 \end{figure}
 
-\textbf{When does it help?} Figure~\ref{fig:memory} repeats the experiment with more KV memory (three seeds
-each at 24k, 30k and full memory). The benefit grows with memory pressure: the median falls by 22\% at 24k and
-13\% at 30k, and at full memory the index matches vLLM. This matches the model: the index
-matters when memory limits how many agents run at once, which is the regime of busy multi-tenant deployments,
-long contexts and large tool outputs.
+\textbf{When does it help?} Figure~\ref{fig:memory} repeats the experiment with more KV memory (three seeds each
+at 24k, 30k and full memory). The median falls by 22\% at 24k and 13\% at 30k, and at full memory the index
+matches vLLM. As the model predicts, the index matters when memory limits how many agents run at once: busy
+multi-tenant servers, long contexts and large tool outputs.
 
 \section{Remaining Challenges and Plan}
 \label{sec:plan}
-\textbf{1. Isolate what the index contributes.} With equal weights, $Z'$ ranks tasks by estimated cost. We will
-compare it on equal footing with simpler rankings: smallest estimated task first, Autellix's ranking on stock
-admission (our Autellix-like run above used our preemptive admission), and a LAMPS-style memory-area
-ranking~\cite{shahout2024lamps}. This decides whether the memory and recomputation terms of
-Eq.~\eqref{eq:z} matter in practice.
+\textbf{1. Isolate what the index contributes.} With equal weights, $Z'$ ranks tasks by estimated cost. At 16k
+tokens the preemption term $\alpha(\ell_y + L_{\max})$ makes up 48--71\% of $Z'$ (Table~\ref{tab:z}), although stock admission never
+preempts for a waiting request. We will compare $Z'$ with simpler rankings on the same stock admission: smallest
+estimated task first, $Z'$ without the preemption term, Autellix's ranking, and a LAMPS-style memory-area
+ranking~\cite{shahout2024lamps}. This decides whether the memory and recomputation terms of Eq.~\eqref{eq:z}
+matter in practice.
 
 \textbf{2. Protect the longest tasks with aging.} Ranking by cost makes the largest tasks wait: six-turn ReAct
-agents (17\% of tasks) finish 14\% later than under vLLM, and their 90th percentile does not improve (106\,s
-versus 101\,s). Each of their seven model calls queues at the lowest priority, so the delay compounds. Our fix
-gives task $J$ the priority $r_J + \kappa Z'_J/w_J$ (smaller is served first): its arrival time plus $\kappa$
-times its index. This interpolates between task-level FCFS ($\kappa = 0$) and the index ($\kappa \to \infty$),
-and it bounds overtaking: a task $K$ that arrives after $J$ is served first only if it arrives less than
-$\kappa(Z'_J/w_J - Z'_K/w_K) \le \kappa Z'_J/w_J$ seconds later, so no task waits behind an endless stream of
-smaller ones. The priority is still fixed at arrival, which Theorem~2's proof needs. The rule is implemented in
-the client layer and unit-tested; at 16k memory $Z'$ ranges from 3.1\,s (two-search fan-out) to 16.7\,s
-(six-turn ReAct), so $\kappa$ between 1 and 8 protects a long task from tasks arriving up to 2 minutes after it.
-We will pick $\kappa$ on the testbed and extend Theorem~2 to this priority using the overtaking bound.
+agents (17\% of tasks) finish 14\% later than under vLLM, and their 90th percentile does not improve (106\,s versus
+101\,s). We will give task $J$ the priority $r_J + \gamma Z'_J/w_J$ (smaller is served first), which interpolates
+between task-level FCFS ($\gamma = 0$) and the index ($\gamma \to \infty$). A later task $K$ is served before $J$
+only if it arrives less than $\gamma(Z'_J/w_J - Z'_K/w_K) \le \gamma Z'_J/w_J$ seconds after $J$, so no task waits
+behind an endless stream of smaller ones. At 16k memory $Z'$ ranges from 3.1\,s (two-search fan-out) to 16.7\,s
+(six-turn ReAct), so with $\gamma \le 8$ a long task can be overtaken only by tasks arriving within about 2 minutes
+of it. The rule is implemented in the client and unit-tested. The priority is still fixed at arrival, but it no
+longer follows Smith's rule, so Theorem~\ref{thm:kv} does not yet cover it; we will extend the proof using the
+overtaking bound.
 
-\textbf{3. Engine changes: make preemption and KV retention cheap.} Theorem~2 needs admission in strict priority
-order with preemption. In our ablations this rule costs latency on long tasks, because vLLM preempts a request
-by discarding its KV cache and recomputing the whole context later; likewise, keeping KV across tool waits gave
-no measurable gain on top of the index at this scale. The scheduler plug-in already has the rules the proof uses
-(Section~\ref{sec:design}), but not the following changes to vLLM's memory management, which target these two
-costs. (a)~\emph{Preempt by swapping, not recomputing:} route preemptions and tool-wait evictions through
-vLLM's KV-offload connector, which copies blocks to CPU memory, so resuming costs a PCIe transfer instead of a
-prefill of the full context. Our model treats a swap as a fixed delay, like a tool call, so we expect the
-analysis to carry over. (b)~\emph{Evict by value, not recency:} vLLM evicts cached blocks least-recently-used. We
-will order them by the recomputation they save per unit of memory and expected remaining wait, using the
-tool-delay distribution the client attaches to each request; today we only move blocks whose time-to-live has
-expired to the front. Theorem~2 allows any eviction order among kept blocks, so this cannot break the guarantee.
-(c)~\emph{A price for memory:} our keep-or-evict analysis for many agents sharing memory is a threshold rule
-with a memory price; we will estimate that price online from the free-memory fraction, so agents keep KV across
-tool waits only when memory is plentiful. We will also look for an admission rule that needs no preemption and
-keeps a constant-factor guarantee, and test KV retention with longer contexts and tool outputs, where
-recomputation is expensive.
+\textbf{3. Make preemption and KV retention cheap.} Theorem~\ref{thm:kv} needs admission in priority order with
+preemption. In vLLM a preempted request loses its KV and recomputes its whole context, so in our ablations the
+preemptive admission of policy $P$ was slower than the index on stock admission. Keeping KV across tool waits also
+gave no measurable gain at this scale. We plan three engine changes. (a)~Preempt and evict by swapping KV to CPU
+memory through vLLM's KV-offload connector, so that resuming costs a transfer instead of a recomputation; the
+model treats a swap as a fixed delay, like a tool call. (b)~Evict kept KV blocks in order of recomputation saved
+per unit of memory and expected remaining wait instead of least-recently-used; the guarantee allows any eviction
+order among kept blocks. (c)~Price memory online from the free-memory fraction, so agents keep KV across tool waits
+only when memory is plentiful. On the theory side, we will look for an admission rule without preemption that keeps
+a constant factor.
 
-\textbf{4. Broaden the evaluation.} More arrival rates and memory sizes, a larger model, and measuring how close
-each run comes to the theory's lower bound on $\mathrm{OPT}$, which tests whether the proven constant is pessimistic.
+\textbf{4. Broaden the evaluation.} More arrival rates and memory sizes, a larger model, longer contexts and tool
+outputs (where keeping KV should pay off), and the ratio of each run to the lower bound on $\OPT$, which tests how
+pessimistic the proven constant is.
 
 \textbf{Timeline.} Items 1 and 2 by the presentation (12/1); items 3 and 4 and the final report by 12/16. Our
-earlier study of KV preloading of tool results, which motivated the engine rules, is complete and serves as a
-fallback.
+earlier study of KV preloading of tool results is complete and serves as a fallback.
 
 \bibliography{refs}
 \bibliographystyle{icml2025}
+
+\appendix
+
+\section{Proof of Theorem~\ref{thm:nomem}}
+\label{app:thm1}
+
+\textbf{Setting.} There are $m$ identical machines. Node $x$ of task $J$ has a known size $p_x$, and an edge
+$u \to v$ carries a random delay $D_{uv} \ge 0$, with any joint law independent of the schedule. Node $v$ becomes
+\emph{available} at time $a_v$, the first time after $r_J$ at which every predecessor $u$ has completed and
+$D_{uv}$ has elapsed. Let $W_J = \sum_{x \in J} p_x$, and let $CP_J$ be the longest path of $J$ counting node sizes
+and delays. The policy ranks tasks by $w_J/W_J$ at arrival (ties by arrival) and ranks the nodes of a task in
+topological order. $K \preceq J$ means that $K$ is ranked no lower than $J$, including $K = J$. At every instant the
+policy runs the $m$ highest-ranked available nodes, preempting as needed.
+
+\begin{lemma}
+\label{lem:pathA}
+On every realization of the delays, $C_J \le r_J + CP_J + \frac{1}{m}\sum_{K \preceq J} W_K$ for every task $J$.
+\end{lemma}
+\begin{proof}
+Let $v_k$ be the last node of $J$ to complete. Its availability time $a_{v_k}$ is either $r_J$ or
+$C_u + D_{u v_k}$ for some predecessor $u$; take that $u$ as $v_{k-1}$ and repeat until reaching a node $v_1$ with
+$a_{v_1} = r_J$. This splits $[r_J, C_J]$ into delay intervals $[C_{v_{i-1}}, a_{v_i}]$ and node intervals
+$[a_{v_i}, C_{v_i}]$. During a node interval, $v_i$ is available, so at each instant either $v_i$ runs or all $m$
+machines run nodes ranked above it, which belong to tasks $K \preceq J$. The first kind of instant totals at most
+$p_{v_i}$. The second kind, summed over all node intervals, totals at most $\frac{1}{m}\sum_{K \preceq J} W_K$,
+because the machines can do at most that much work for these tasks. The delays and node sizes along the path sum
+to at most $CP_J$.
+\end{proof}
+
+\textbf{Proof of Theorem~\ref{thm:nomem}.} Two lower bounds hold on every realization, even for a clairvoyant
+schedule that knows the delays in advance, and hence for $\OPT$. First, $C_J \ge r_J + CP_J$ in any schedule, so
+$\OPT \ge LB_{cp} := \sum_J w_J (r_J + \mathbb{E}[CP_J])$. Second, any $m$-machine schedule can be simulated on one
+machine of speed $m$ that ignores release dates and delays, with no task finishing later. On that machine Smith's
+rule is optimal, so $\OPT \ge \frac{1}{m}\,\mathrm{Smith}(W)$, where
+$\mathrm{Smith}(W) = \sum_J w_J \sum_{K \preceq J} W_K$ with tasks ordered by decreasing $w_K/W_K$. This is exactly
+the policy's order, so multiplying Lemma~\ref{lem:pathA} by $w_J$, summing over $J$ and taking expectations gives
+$\mathbb{E}[\sum_J w_J C_J] \le LB_{cp} + \frac{1}{m}\mathrm{Smith}(W) \le 2\,\OPT$. For single-node tasks without
+delays the policy is preemptive WSPT, for which Megow and Schulz~\cite{megow2004online} show that the factor 2 is
+tight. \qed
+
+\section{Proof of Theorem~\ref{thm:kv}}
+\label{app:thm2}
+
+\textbf{Assumptions.} The token counts $\rho_y$, $q_y$, $X_y$ of every node of $J$ are known when $J$ arrives. Tool
+delays are random, with any law independent of the schedule. $\OPT$ does not prefill a node's prompt before the
+node is available (see the remarks at the end).
+
+\textbf{Analysis model.} We analyze $P$ in a hybrid model with one prefill server and $m = a/c$ decode machines.
+The server prefills $1/\alpha$ tokens per second, one node at a time, preemptively; a paused prefill keeps its KV.
+Each decode machine decodes $1/a$ tokens per second. KV memory is $M'$. The fluid engine at speed $s$ gives
+prefill a share $u$ of its time, so prefill runs at $su/\alpha$ tokens per second and each of $B$ decoding
+sequences at $s(1-u)/(a+cB)$. With $s = 3$ and $u = 1/3$, prefill runs at $1/\alpha$ and each sequence at
+$2/(a+cB) \ge 1/a$ whenever $B \le m$, so the speed-3 engine can reproduce any hybrid schedule exactly; no speed
+below 3 suffices. It is therefore enough to bound $P$ in the hybrid model against $\OPT$ on the engine at speed 1.
+
+\textbf{Policy $P$.} Tasks are ranked by increasing $Z'_J/w_J$ at arrival, and nodes become available as in
+Appendix~\ref{app:thm1}. The \emph{admitted} nodes are the longest prefix, in priority order, of the available
+unfinished nodes whose footprints $\ell_y$ sum to at most $M'$; the prefix stops at the first node that does not
+fit. When a newly available node enters the prefix, the admitted nodes that no longer fit are \emph{kicked}: their
+KV is discarded, and on readmission they recompute their prompt and generated tokens as prefill, then continue
+decoding where they stopped. The server prefills the highest-ranked admitted node in its prefill phase, and the $m$
+highest-ranked admitted nodes in their decode phase decode. A finished node's KV is freed, so its children
+recompute their $\rho$ context tokens.
+
+\begin{lemma}[kick charge]
+\label{lem:kick}
+When node $y$ becomes available, the nodes kicked at that instant have total footprint less than
+$\ell_y + L_{\max}$, so they cause less than $\kappa_y := \alpha(\ell_y + L_{\max})$ seconds of recomputation.
+\end{lemma}
+\begin{proof}
+Before the event, the admitted nodes have total footprint $S_{\mathrm{old}} \le M'$; let $S_{\mathrm{above}}$ be
+the part ranked above $y$. If $S_{\mathrm{above}} + \ell_y > M'$, the new prefix stops at $y$, and the kicked nodes
+are those ranked below $y$, of total $S_{\mathrm{old}} - S_{\mathrm{above}} \le M' - S_{\mathrm{above}} < \ell_y$.
+Otherwise $y$ is admitted. If the new prefix stops at a node of footprint $\ell_{\mathrm{next}} \le L_{\max}$, its
+total satisfies $S_{\mathrm{new}} > M' - \ell_{\mathrm{next}}$; it consists of $y$ and the old nodes that stay
+admitted, so the kicked total is $S_{\mathrm{old}} - (S_{\mathrm{new}} - \ell_y) < \ell_y + \ell_{\mathrm{next}}
+\le \ell_y + L_{\max}$. If the prefix does not stop, nothing is kicked. A kicked node recomputes at most its
+footprint. Completions only free memory and extend the prefix, so they kick nothing. Simultaneous arrivals are
+handled the same way, with their total footprint in place of $\ell_y$.
+\end{proof}
+
+\begin{lemma}[pathwise bound]
+\label{lem:pathD}
+On every realization of the delays, $C_J \le r_J + CP'_J + \sum_{K \preceq J} Z'_K$, where $CP'_J$ is the longest
+path of $J$ with node lengths $\alpha(q_y + \rho_y) + aX_y$ plus delays.
+\end{lemma}
+\begin{proof}
+Build the path $v_1, \dots, v_k$ as in Lemma~\ref{lem:pathA}, and fix a node $v$ on it. Every instant of
+$[a_v, C_v]$ falls into one of four cases.
+\begin{itemize}
+\item[(P)] $v$ is prefilled or decoded. This totals at most $\alpha(q_v + \rho_v) + aX_v$; recomputation of $v$
+after a kick is charged to the kicker in (C).
+\item[(C)] The server prefills a node ranked above $v$, including recomputation after kicks. A kicked node is
+ranked below its kicker, so all of this work belongs to nodes and kickers of tasks $K \preceq J$. By
+Lemma~\ref{lem:kick}, these instants total at most $\sum_{K \preceq J}\sum_{y \in K} [\alpha(q_y+\rho_y) + \kappa_y]$.
+\item[(A)] All $m$ decode machines decode nodes ranked above $v$. Kicked nodes resume where they stopped, so each
+token is decoded once, at a total rate of $m/a$ tokens per second. These instants total at most
+$\sum_{K \preceq J}\sum_{y \in K} (a/m) X_y = \sum_{K \preceq J}\sum_{y \in K} cX_y$.
+\item[(B)] $v$ is not admitted, no admitted node is in its prefill phase, and fewer than $m$ admitted nodes exist.
+Then every admitted node is decoding. The prefix stopped at a node ranked no lower than $v$, so the admitted nodes
+are all ranked above $v$ and their footprints exceed $M' - L_{\max} = M$. A node $y$ decodes for $aX_y$ seconds in
+total while holding $\ell_y$ tokens, so these instants total at most
+$\sum_{K \preceq J}\sum_{y \in K} aX_y\ell_y/M$.
+\end{itemize}
+The cases are exhaustive. If $v$ is admitted in its prefill phase but not served, the server prefills a node ranked
+above it (C). If $v$ is admitted in its decode phase but not decoding, $m$ higher-ranked nodes decode (A). If $v$ is
+not admitted, the admitted nodes are ranked above $v$, and the instant is (C), (A) or (B). Summing over the path,
+the (P) instants and the delays total at most $CP'_J$, and (A), (B) and (C) total at most
+$\sum_{K \preceq J} Z'_K$ by Eq.~\eqref{eq:z}.
+\end{proof}
+
+\textbf{Lower bounds on $\OPT$.} $\OPT$ runs the engine at speed 1 with memory $M$. Let
+$\sigma_y = \alpha q_y + cX_y$ and $A_y = (\rho_y + q_y)(a+c)X_y$, and let $\sigma_J$ and $A_J$ be their sums over
+$J$'s nodes. Both bounds below hold on every realization.
+\begin{itemize}
+\item[(i)] \emph{Critical path.} Once node $y$ is available, $\OPT$ needs at least $\alpha q_y + (a+c)X_y$ seconds to
+finish it: its $q_y$ new tokens must be prefilled before its first decode step, and each of its $X_y$ decode
+steps lasts at least $a + c$. (The parent's KV may be kept, so $\rho_y$ is free.) Hence $C_J \ge r_J + CP^*_J$,
+where $CP^*_J$ uses these node lengths, and $\OPT \ge LB_{cp} := \sum_J w_J(r_J + \mathbb{E}[CP^*_J])$.
+\item[(ii)] \emph{GPU time and memory area.} A step lasts at least $c$ per decoded sequence plus $\alpha$ per
+prefilled token, so the GPU work $\sigma$ done by time $t$ totals at most $t$. During each of its decode steps,
+node $y$ holds at least $\rho_y + q_y$ tokens for at least $a + c$ seconds, and memory holds at most $M$ tokens, so
+the area $A$ accumulated by time $t$ is at most $Mt$. Ordering tasks by their completion times under $\OPT$,
+$\sum_{K \text{ up to } J}(\sigma_K + A_K/M) \le 2C_J$, hence $\OPT \ge \frac{1}{2}\mathrm{Smith}(\sigma + A/M)$.
+\end{itemize}
+
+\textbf{Proof of Theorem~\ref{thm:kv}.} Each node satisfies
+$\alpha(q_y + \rho_y) + aX_y \le (1+\beta)(\alpha q_y + aX_y) \le (1+\beta)(\alpha q_y + (a+c)X_y)$, so
+$r_J + CP'_J \le (1+\beta)(r_J + CP^*_J)$ on every realization. By the definition of $\lambda$,
+$Z'_K \le \lambda(\sigma_K + A_K/M)$. $P$ orders tasks by Smith's rule on $Z'$, so
+$\sum_J w_J \sum_{K \preceq J} Z'_K = \mathrm{Smith}(Z') \le \lambda\,\mathrm{Smith}(\sigma + A/M)$. Multiplying
+Lemma~\ref{lem:pathD} by $w_J$, summing and taking expectations gives
+$\mathbb{E}[\sum_J w_J C_J] \le (1+\beta)LB_{cp} + \lambda\,\mathrm{Smith}(\sigma + A/M) \le (1 + \beta + 2\lambda)\OPT$.
+\qed
+
+\textbf{Remarks.} (1)~If $\OPT$ may prefill tool results that return early while other tool calls of the same node
+are still running, bound (i) fails. Setting $q_y = 0$ in (i) for such nodes restores it, at a slightly larger
+constant (9.6 instead of 9.5 for our workload). (2)~For our workload at 16k tokens, $\beta = 0.36$ and
+$\lambda = 4.05$. The preemption charge $\kappa_y$ dominates $\lambda$, because outputs are short. (3)~The proof is
+for the fluid engine. For discrete steps we have only a proof sketch, which adds one step time per node and per
+completed prefill.
 
 \end{document}

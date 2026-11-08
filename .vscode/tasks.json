@@ -1,0 +1,34 @@
+{
+  // Ctrl+Shift+B: build the report once. "Run Task" -> "Report: watch" rebuilds on every save.
+  // Open codesign/report/main.pdf in a side tab; the PDF viewer reloads it after each build.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Report: build",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/codesign/report/build.ps1"],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": {
+        "owner": "tectonic",
+        "fileLocation": ["relative", "${workspaceFolder}/codesign/report"],
+        "pattern": { "regexp": "^(error|warning): (.+?\\.(?:tex|bib|sty)):(\\d+): (.*)$", "severity": 1, "file": 2, "line": 3, "message": 4 }
+      }
+    },
+    {
+      "label": "Report: watch",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/codesign/report/build.ps1", "-Watch"],
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "tectonic",
+        "fileLocation": ["relative", "${workspaceFolder}/codesign/report"],
+        "pattern": { "regexp": "^(error|warning): (.+?\\.(?:tex|bib|sty)):(\\d+): (.*)$", "severity": 1, "file": 2, "line": 3, "message": 4 },
+        "background": { "activeBegin": true, "beginsPattern": "building .* \\.\\.\\.", "endsPattern": "\\] (ok|FAILED)" }
+      }
+    }
+  ]
+}
