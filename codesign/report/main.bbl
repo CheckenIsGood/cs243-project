@@ -1,0 +1,99 @@
+\begin{thebibliography}{13}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Jaillet et~al.(2025)Jaillet, Jiang, Mellou, Molinaro, Podimata, and
+  Zhou]{jaillet2025online}
+Jaillet, P., Jiang, J., Mellou, K., Molinaro, M., Podimata, C., and Zhou, Z.
+\newblock Online scheduling for {LLM} inference with {KV} cache constraints.
+\newblock \emph{arXiv preprint arXiv:2502.07115}, 2025.
+
+\bibitem[Kim et~al.(2024)Kim, Moon, Tabrizi, Lee, Mahoney, Keutzer, and
+  Gholami]{kim2024llmcompiler}
+Kim, S., Moon, S., Tabrizi, R., Lee, N., Mahoney, M.~W., Keutzer, K., and
+  Gholami, A.
+\newblock An {LLM} compiler for parallel function calling.
+\newblock In \emph{Proceedings of the 41st International Conference on Machine
+  Learning (ICML)}, 2024.
+
+\bibitem[Kwon et~al.(2023)Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang,
+  and Stoica]{kwon2023vllm}
+Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C.~H., Gonzalez, J.~E.,
+  Zhang, H., and Stoica, I.
+\newblock Efficient memory management for large language model serving with
+  {PagedAttention}.
+\newblock In \emph{Proceedings of the 29th Symposium on Operating Systems
+  Principles (SOSP)}, 2023.
+
+\bibitem[Li et~al.(2025)Li, Mang, He, Zhang, Mao, Chen, Cheung, Gonzalez, and
+  Stoica]{li2025continuum}
+Li, H., Mang, Q., He, R., Zhang, Q., Mao, H., Chen, X., Cheung, A., Gonzalez,
+  J., and Stoica, I.
+\newblock Continuum: Efficient and robust multi-turn {LLM} agent scheduling
+  with {KV} cache time-to-live.
+\newblock \emph{arXiv preprint arXiv:2511.02230}, 2025.
+
+\bibitem[Luo et~al.(2025)Luo, Shi, Cai, Zhang, Wong, Wang, Wang, Huang, Chen,
+  Gonzalez, and Stoica]{luo2025autellix}
+Luo, M., Shi, X., Cai, C., Zhang, T., Wong, J., Wang, Y., Wang, C., Huang, Y.,
+  Chen, Z., Gonzalez, J.~E., and Stoica, I.
+\newblock Autellix: An efficient serving engine for {LLM} agents as general
+  programs.
+\newblock \emph{arXiv preprint arXiv:2502.13965}, 2025.
+
+\bibitem[Megow \& Schulz(2004)Megow and Schulz]{megow2004online}
+Megow, N. and Schulz, A.~S.
+\newblock On-line scheduling to minimize average completion time revisited.
+\newblock \emph{Operations Research Letters}, 32\penalty0 (5):\penalty0
+  485--490, 2004.
+
+\bibitem[M{\"o}hring et~al.(1999)M{\"o}hring, Schulz, and
+  Uetz]{mohring1999approximation}
+M{\"o}hring, R.~H., Schulz, A.~S., and Uetz, M.
+\newblock Approximation in stochastic scheduling: The power of {LP}-based
+  priority policies.
+\newblock \emph{Journal of the ACM}, 46\penalty0 (6):\penalty0 924--942, 1999.
+
+\bibitem[{Qwen Team}(2025)]{qwen3}
+{Qwen Team}.
+\newblock {Qwen3} technical report.
+\newblock \emph{arXiv preprint arXiv:2505.09388}, 2025.
+
+\bibitem[Shahout et~al.(2024)Shahout, Liang, Xin, Lao, Cui, Yu, and
+  Mitzenmacher]{shahout2024lamps}
+Shahout, R., Liang, C., Xin, S., Lao, Q., Cui, Y., Yu, M., and Mitzenmacher, M.
+\newblock Fast inference for augmented large language models.
+\newblock \emph{arXiv preprint arXiv:2410.18248}, 2024.
+
+\bibitem[Skutella \& Uetz(2005)Skutella and Uetz]{skutella2005stochastic}
+Skutella, M. and Uetz, M.
+\newblock Stochastic machine scheduling with precedence constraints.
+\newblock \emph{SIAM Journal on Computing}, 34\penalty0 (4):\penalty0 788--802,
+  2005.
+
+\bibitem[Smith(1956)]{smith1956various}
+Smith, W.~E.
+\newblock Various optimizers for single-stage production.
+\newblock \emph{Naval Research Logistics Quarterly}, 3\penalty0
+  (1--2):\penalty0 59--66, 1956.
+
+\bibitem[Yang et~al.(2018)Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and
+  Manning]{yang2018hotpotqa}
+Yang, Z., Qi, P., Zhang, S., Bengio, Y., Cohen, W.~W., Salakhutdinov, R., and
+  Manning, C.~D.
+\newblock {HotpotQA}: A dataset for diverse, explainable multi-hop question
+  answering.
+\newblock In \emph{Proceedings of the 2018 Conference on Empirical Methods in
+  Natural Language Processing (EMNLP)}, 2018.
+
+\bibitem[Yao et~al.(2023)Yao, Zhao, Yu, Du, Shafran, Narasimhan, and
+  Cao]{yao2023react}
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., and Cao, Y.
+\newblock {ReAct}: Synergizing reasoning and acting in language models.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2023.
+
+\end{thebibliography}
